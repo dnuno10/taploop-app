@@ -1,9 +1,9 @@
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, undefined_prefixed_name
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
 
 import 'dart:async';
 import 'dart:html' as html;
 import 'dart:js_util' as js_util;
-import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/widgets.dart';
 
@@ -45,7 +45,7 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
       ..style.objectFit = 'cover'
       ..style.border = '0';
 
-    ui.platformViewRegistry.registerViewFactory(_viewType, (viewId) {
+    ui_web.platformViewRegistry.registerViewFactory(_viewType, (viewId) {
       return _videoElement;
     });
 
