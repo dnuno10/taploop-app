@@ -54,9 +54,15 @@ class _DashboardViewState extends State<DashboardView> {
   void _onAppStateChanged() {
     final cardId = appState.currentCard?.id;
     _bindRealtime();
-    if (!mounted || cardId == _loadedCardId) return;
-    setState(() => _loading = true);
-    _load();
+    if (!mounted) return;
+
+    if (cardId != _loadedCardId) {
+      setState(() => _loading = true);
+      _load();
+      return;
+    }
+
+    setState(() {});
   }
 
   void _bindRealtime() {

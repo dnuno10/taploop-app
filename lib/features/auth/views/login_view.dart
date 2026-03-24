@@ -45,13 +45,12 @@ class _LoginViewState extends State<LoginView> {
         email: _emailCtrl.text.trim(),
         password: _passwordCtrl.text,
       );
-      if (!mounted) return;
-      appState.setUser(user);
       appState.setLoadingCard(true);
+      appState.setUser(user);
       final card = await AuthService.fetchUserCard(user.id);
-      if (!mounted) return;
       appState.setCard(card);
       appState.setLoadingCard(false);
+      if (!mounted) return;
       final pendingNfc = widget.pendingNfc;
       if (pendingNfc != null && pendingNfc.isNotEmpty) {
         context.go('/nfc/$pendingNfc');

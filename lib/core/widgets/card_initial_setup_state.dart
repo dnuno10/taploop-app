@@ -1,7 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'card_qr_web_capture_stub.dart'
+    if (dart.library.html) 'card_qr_web_capture_web.dart'
+    as web_qr;
 import '../data/app_state.dart';
 import '../data/repositories/card_repository.dart';
 import '../services/auth_service.dart';
@@ -18,12 +22,7 @@ class CardInitialSetupState extends StatefulWidget {
 }
 
 class _CardInitialSetupStateState extends State<CardInitialSetupState> {
-  final MobileScannerController _scannerController = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode],
-    facing: CameraFacing.back,
-    detectionSpeed: DetectionSpeed.noDuplicates,
-    returnImage: false,
-  );
+  MobileScannerController? _scannerController;
 
   bool _scannerVisible = false;
   bool _submitting = false;
@@ -31,13 +30,62 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
   String? _error;
   String? _cameraError;
 
+  bool get _usesEmbeddedScanner => !kIsWeb;
+
   @override
   void dispose() {
-    _scannerController.dispose();
+    _disposeScannerController();
     super.dispose();
   }
 
   Future<void> _startScanner() async {
+    if (!_usesEmbeddedScanner) {
+      setState(() {
+        _scannerVisible = true;
+        _submitting = true;
+        _error = null;
+        _cameraError = null;
+        _hasProcessedScan = false;
+      });
+
+      final rawValue = await web_qr.captureQrCodeFromCameraOrImage();
+      if (!mounted) return;
+
+      if (rawValue == null || rawValue.trim().isEmpty) {
+        setState(() {
+          _scannerVisible = false;
+          _submitting = false;
+          _cameraError =
+              'No se pudo leer el QR desde la camara o la imagen seleccionada.';
+        });
+        return;
+      }
+
+      await _processScannedValue(rawValue);
+      return;
+    }
+
+    if (_scannerController == null) {
+      try {
+        _scannerController = MobileScannerController(
+          formats: const [BarcodeFormat.qrCode],
+          facing: CameraFacing.back,
+          detectionSpeed: DetectionSpeed.noDuplicates,
+          returnImage: false,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _scannerVisible = true;
+          _cameraError =
+              'No se pudo iniciar la camara en este dispositivo o navegador.';
+          _error = null;
+          _hasProcessedScan = false;
+        });
+        return;
+      }
+    }
+
     setState(() {
       _scannerVisible = true;
       _error = null;
@@ -47,6 +95,7 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
   }
 
   void _closeScanner() {
+    _disposeScannerController();
     setState(() {
       _scannerVisible = false;
       _submitting = false;
@@ -56,13 +105,20 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
     });
   }
 
-  void _retryScanner() {
+  Future<void> _retryScanner() async {
+    _disposeScannerController();
     setState(() {
       _cameraError = null;
       _error = null;
       _hasProcessedScan = false;
       _submitting = false;
     });
+    await _startScanner();
+  }
+
+  void _disposeScannerController() {
+    _scannerController?.dispose();
+    _scannerController = null;
   }
 
   Future<void> _handleBarcode(BarcodeCapture capture) async {
@@ -70,6 +126,12 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
 
     final rawValue = capture.barcodes.firstOrNull?.rawValue;
     if (rawValue == null || rawValue.trim().isEmpty) return;
+
+    await _processScannedValue(rawValue);
+  }
+
+  Future<void> _processScannedValue(String rawValue) async {
+    if (_submitting) return;
 
     setState(() {
       _hasProcessedScan = true;
@@ -154,7 +216,9 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'La vinculacion se realiza unicamente con la camara del dispositivo. Al validar el QR se enlaza la tarjeta en nfc_cards con tu usuario y, si corresponde, se crea tu digital_card para habilitar clicks, taps, visitas, leads y metricas.',
+                      _usesEmbeddedScanner
+                          ? 'La vinculacion se realiza unicamente con la camara del dispositivo. Al validar el QR se enlaza la tarjeta en nfc_cards con tu usuario y, si corresponde, se crea tu digital_card para habilitar clicks, taps, visitas, leads y metricas.'
+                          : 'En navegador se abrira la camara o el selector nativo para capturar el QR y vincular la tarjeta sin depender del plugin embebido.',
                       style: GoogleFonts.dmSans(
                         color: context.textSecondary,
                         fontSize: 14,
@@ -164,7 +228,9 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                     const SizedBox(height: 22),
                     _CardSetupActionButton(
                       label: _scannerVisible
-                          ? 'Escaneando QR...'
+                          ? (_usesEmbeddedScanner
+                                ? 'Escaneando QR...'
+                                : 'Leyendo QR...')
                           : 'Escanear QR de tarjeta',
                       icon: Icons.qr_code_scanner_rounded,
                       filled: true,
@@ -236,7 +302,9 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Escanea el QR de la tarjeta',
+                          _usesEmbeddedScanner
+                              ? 'Escanea el QR de la tarjeta'
+                              : 'Lee el QR con la camara',
                           style: GoogleFonts.outfit(
                             color: context.textPrimary,
                             fontSize: 22,
@@ -252,7 +320,9 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Coloca el QR dentro del recuadro. La lectura de la camara validara la tarjeta y la vinculara automaticamente a tu cuenta.',
+                    _usesEmbeddedScanner
+                        ? 'Coloca el QR dentro del recuadro. La lectura de la camara validara la tarjeta y la vinculara automaticamente a tu cuenta.'
+                        : 'Tu navegador abrira la camara del dispositivo o el selector de imagen para capturar el QR y vincular la tarjeta.',
                     style: GoogleFonts.dmSans(
                       color: context.textSecondary,
                       fontSize: 13,
@@ -260,76 +330,139 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: SizedBox(
-                      height: 320,
-                      width: double.infinity,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          MobileScanner(
-                            controller: _scannerController,
-                            onDetect: _handleBarcode,
-                            errorBuilder: (context, error, child) {
-                              final message = switch (error.errorCode) {
-                                MobileScannerErrorCode.permissionDenied =>
-                                  'La camara no tiene permiso. Permite el acceso a la camara para escanear el QR.',
-                                MobileScannerErrorCode.unsupported =>
-                                  'Este dispositivo o navegador no soporta escaneo con camara.',
-                                _ =>
-                                  error.errorDetails?.message ??
-                                      error.errorCode.message,
-                              };
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (!mounted || _cameraError == message) return;
-                                setState(() => _cameraError = message);
-                              });
-                              return _ScannerErrorState(
-                                message: message,
-                                onRetry: _retryScanner,
-                                onClose: _closeScanner,
-                              );
-                            },
-                          ),
-                          IgnorePointer(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: AppColors.white.withValues(
-                                    alpha: 0.85,
+                  _usesEmbeddedScanner
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: SizedBox(
+                            height: 320,
+                            width: double.infinity,
+                            child: _scannerController == null
+                                ? (_cameraError != null
+                                      ? _ScannerErrorState(
+                                          message: _cameraError!,
+                                          onRetry: _retryScanner,
+                                          onClose: _closeScanner,
+                                        )
+                                      : Container(
+                                          color: context.bgSubtle,
+                                          alignment: Alignment.center,
+                                          child:
+                                              const CircularProgressIndicator(),
+                                        ))
+                                : Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      MobileScanner(
+                                        controller: _scannerController!,
+                                        onDetect: _handleBarcode,
+                                        errorBuilder: (context, error, child) {
+                                          final message = switch (error
+                                              .errorCode) {
+                                            MobileScannerErrorCode
+                                                .permissionDenied =>
+                                              'La camara no tiene permiso. Permite el acceso a la camara para escanear el QR.',
+                                            MobileScannerErrorCode
+                                                .unsupported =>
+                                              'Este dispositivo o navegador no soporta escaneo con camara.',
+                                            _ =>
+                                              error.errorDetails?.message ??
+                                                  error.errorCode.message,
+                                          };
+                                          WidgetsBinding.instance
+                                              .addPostFrameCallback((_) {
+                                                if (!mounted ||
+                                                    _cameraError == message) {
+                                                  return;
+                                                }
+                                                setState(
+                                                  () => _cameraError = message,
+                                                );
+                                              });
+                                          return _ScannerErrorState(
+                                            message: message,
+                                            onRetry: _retryScanner,
+                                            onClose: _closeScanner,
+                                          );
+                                        },
+                                      ),
+                                      IgnorePointer(
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            border: Border.all(
+                                              color: AppColors.white.withValues(
+                                                alpha: 0.85,
+                                              ),
+                                              width: 2,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                          margin: const EdgeInsets.all(28),
+                                        ),
+                                      ),
+                                      if (_submitting)
+                                        Container(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.45,
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const CircularProgressIndicator(),
+                                              const SizedBox(height: 14),
+                                              Text(
+                                                'Validando QR y vinculando tarjeta...',
+                                                style: GoogleFonts.dmSans(
+                                                  color: AppColors.white,
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  width: 2,
+                          ),
+                        )
+                      : Container(
+                          height: 220,
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: context.bgSubtle,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: context.borderColor),
+                          ),
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Abriendo la camara del dispositivo...',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.outfit(
+                                  color: context.textPrimary,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
                                 ),
-                                borderRadius: BorderRadius.circular(20),
                               ),
-                              margin: const EdgeInsets.all(28),
-                            ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Si el navegador no abre la camara, selecciona una foto del QR para continuar.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.dmSans(
+                                  color: context.textSecondary,
+                                  fontSize: 13,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
                           ),
-                          if (_submitting)
-                            Container(
-                              color: Colors.black.withValues(alpha: 0.45),
-                              alignment: Alignment.center,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const CircularProgressIndicator(),
-                                  const SizedBox(height: 14),
-                                  Text(
-                                    'Validando QR y vinculando tarjeta...',
-                                    style: GoogleFonts.dmSans(
-                                      color: AppColors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                        ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Text(
