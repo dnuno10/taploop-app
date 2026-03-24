@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="TapLoop — Tarjetas de presentación digitales. Comparte tu perfil profesional con un solo toque.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="TapLoop">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="TapLoop">
+  <meta property="og:description" content="Tarjeta de presentación digital">
+  <meta property="og:type" content="website">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>TapLoop</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <!-- SPA redirect restore: 404.html encodes the path as ?p=/nfc/TL-XXXX,
+       this script restores it before Flutter boots so go_router sees the real URL. -->
+  <script>
+    (function() {
+      var redirect = sessionStorage.getItem('spa_redirect');
+      if (redirect) {
+        sessionStorage.removeItem('spa_redirect');
+        // Replace current history entry so the back button works correctly
+        window.history.replaceState(null, '', redirect);
+      }
+    })();
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
