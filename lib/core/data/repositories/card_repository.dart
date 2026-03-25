@@ -273,13 +273,21 @@ class CardRepository {
   }
 
   static String? resolveCompanyLogoUrl(String? storedValue) {
-    final value = storedValue?.trim();
+    final value = storedValue
+        ?.trim()
+        .replaceAll(RegExp(r"""^['"]+|['"]+$"""), '')
+        .replaceFirst(RegExp(r'^/+'), '');
     if (value == null || value.isEmpty) return null;
     if (value.startsWith('http://') || value.startsWith('https://')) {
       return value.replaceFirst(
         '/storage/v1/object/public/logos/',
         '/storage/v1/object/public/company-logos/',
       );
+    }
+    if (value.startsWith('company-logos/')) {
+      return _db.storage
+          .from('company-logos')
+          .getPublicUrl(value.replaceFirst('company-logos/', ''));
     }
     if (value.startsWith('logos/')) {
       return _db.storage

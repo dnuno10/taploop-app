@@ -57,6 +57,18 @@ class _PublicCardViewState extends State<PublicCardView> {
     _load();
   }
 
+  Future<DigitalCardModel?> _hydrateOrganizationLogo(
+    DigitalCardModel? card,
+  ) async {
+    if (card == null) return null;
+    final orgLogoUrl = await CardRepository.fetchOrganizationLogoUrl(
+      card.orgId,
+    );
+    if (orgLogoUrl == null || orgLogoUrl.isEmpty) return card;
+    if (orgLogoUrl == card.companyLogoUrl) return card;
+    return card.copyWith(companyLogoUrl: orgLogoUrl);
+  }
+
   Future<void> _load() async {
     try {
       if (_isNfcFlow) {
@@ -68,6 +80,7 @@ class _PublicCardViewState extends State<PublicCardView> {
         } else {
           card = await CardRepository.fetchBySlug(widget.slug!);
         }
+        card = await _hydrateOrganizationLogo(card);
         if (mounted) {
           setState(() {
             _card = card;
@@ -109,7 +122,9 @@ class _PublicCardViewState extends State<PublicCardView> {
       return;
     }
     // assigned — load the card
-    final card = await CardRepository.fetchByNfcSerial(widget.nfcSerial!);
+    final card = await _hydrateOrganizationLogo(
+      await CardRepository.fetchByNfcSerial(widget.nfcSerial!),
+    );
     if (mounted) {
       setState(() {
         _card = card;
