@@ -249,12 +249,13 @@ class CardRepository {
     );
     if (resolvedCardLogoUrl != null && resolvedCardLogoUrl.isNotEmpty) {
       hydratedJson['company_logo_url'] = resolvedCardLogoUrl;
-    }
-    final orgLogoUrl = await fetchOrganizationLogoUrl(
-      hydratedJson['org_id'] as String?,
-    );
-    if (orgLogoUrl != null && orgLogoUrl.isNotEmpty) {
-      hydratedJson['company_logo_url'] = orgLogoUrl;
+    } else {
+      final orgLogoUrl = await fetchOrganizationLogoUrl(
+        hydratedJson['org_id'] as String?,
+      );
+      if (orgLogoUrl != null && orgLogoUrl.isNotEmpty) {
+        hydratedJson['company_logo_url'] = orgLogoUrl;
+      }
     }
 
     return DigitalCardModel.fromJson(
