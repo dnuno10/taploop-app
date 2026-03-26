@@ -493,7 +493,11 @@ class _AdminViewState extends State<AdminView> {
       activeMembers.map((member) => member.member.clicksByDay).toList(),
     );
     final rankedMembers = [...activeMembers]
-      ..sort((a, b) => b.member.leads.compareTo(a.member.leads));
+      ..sort((a, b) {
+        final tapsCompare = b.member.taps.compareTo(a.member.taps);
+        if (tapsCompare != 0) return tapsCompare;
+        return b.member.totalClicks.compareTo(a.member.totalClicks);
+      });
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -1198,7 +1202,7 @@ class _AdminTeamHighlights extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Miembros con mayor generación de leads y actividad comercial.',
+            'Miembros con mayor número de taps e interacción comercial.',
             style: GoogleFonts.dmSans(
               fontSize: 12,
               color: context.textSecondary,
@@ -1253,7 +1257,7 @@ class _AdminTeamHighlights extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                '${entry.value.member.leads} leads · ${entry.value.member.totalClicks} clicks · ${entry.value.member.taps} taps',
+                                '${entry.value.member.taps} taps · ${entry.value.member.totalClicks} clicks · ${entry.value.member.leads} leads',
                                 style: GoogleFonts.dmSans(
                                   fontSize: 11,
                                   color: context.textSecondary,
