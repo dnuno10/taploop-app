@@ -3315,6 +3315,14 @@ class _FormulariosTabState extends State<_FormulariosTab> {
   }
 
   Future<void> _createForm() async {
+    if (_forms.length >= 5) {
+      TapLoopToast.show(
+        context,
+        'Máximo 5 formularios permitidos en total.',
+        TapLoopToastType.error,
+      );
+      return;
+    }
     final nameCtrl = TextEditingController();
     final created = await showDialog<String>(
       context: context,
@@ -3421,7 +3429,10 @@ class _FormulariosTabState extends State<_FormulariosTab> {
                 ..._forms.map(
                   (f) => Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: _DbSmartFormCard(form: f, onChanged: _loadForms),
+                    child: _DbSmartFormCard(
+                      form: f,
+                      onChanged: _loadForms,
+                    ),
                   ),
                 ),
             ],
@@ -3436,7 +3447,10 @@ class _DbSmartFormCard extends StatefulWidget {
   final SmartFormModel form;
   final VoidCallback onChanged;
 
-  const _DbSmartFormCard({required this.form, required this.onChanged});
+  const _DbSmartFormCard({
+    required this.form,
+    required this.onChanged,
+  });
 
   @override
   State<_DbSmartFormCard> createState() => _DbSmartFormCardState();
