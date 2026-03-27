@@ -347,9 +347,11 @@ class CampaignRepository {
       for (final event in hydratedEvents) {
         final source = event.source?.trim();
         if (source != null && source.isNotEmpty) sourceSet.add(source);
-        if (source == 'nfc' || source == 'qr') profileViews += 1;
+        if (source == 'nfc' || source == 'qr' || source == 'link') {
+          profileViews += 1;
+        }
         if (source == 'form') forms += 1;
-        if (source == 'link' || source == 'contact' || source == 'social') {
+        if (source == 'contact' || source == 'social') {
           clicks += 1;
         }
       }

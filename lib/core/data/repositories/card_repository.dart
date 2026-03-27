@@ -8,27 +8,33 @@ class CardRepository {
   CardRepository._();
 
   static final _db = SupabaseService.client;
+  static final Map<String, String?> _organizationLogoUrlCache = {};
+  static final Map<String, String?> _userOrganizationIdCache = {};
 
   // ─── Fetch card with contacts & social links ─────────────────────────────
 
   static Future<DigitalCardModel?> fetchCard(String cardId) async {
-    final cardData = await _db
+    final cardFuture = _db
         .from('digital_cards')
         .select()
         .eq('id', cardId)
         .single();
 
-    final contacts = await _db
+    final contactsFuture = _db
         .from('contact_items')
         .select()
         .eq('card_id', cardId)
         .order('sort_order');
 
-    final socials = await _db
+    final socialsFuture = _db
         .from('social_links')
         .select()
         .eq('card_id', cardId)
         .order('sort_order');
+
+    final cardData = await cardFuture;
+    final contacts = await contactsFuture;
+    final socials = await socialsFuture;
 
     return buildCardModel(
       cardData,
@@ -43,7 +49,10 @@ class CardRepository {
 
   // ─── Fetch public card by slug (no auth required) ────────────────────────
 
-  static Future<DigitalCardModel?> fetchBySlug(String slug) async {
+  static Future<DigitalCardModel?> fetchBySlug(
+    String slug, {
+    bool includeOrganizationLogo = true,
+  }) async {
     final rows = await _db
         .from('digital_cards')
         .select()
@@ -51,13 +60,19 @@ class CardRepository {
         .limit(1);
 
     if ((rows as List).isEmpty) return null;
-    return _fetchWithItems(rows.first);
+    return _fetchWithItems(
+      rows.first,
+      includeOrganizationLogo: includeOrganizationLogo,
+    );
   }
 
   // ─── Fetch public card by user_id (permanent NFC URL) ────────────────────
   // This never breaks even if the user changes their slug.
 
-  static Future<DigitalCardModel?> fetchByUserId(String userId) async {
+  static Future<DigitalCardModel?> fetchByUserId(
+    String userId, {
+    bool includeOrganizationLogo = true,
+  }) async {
     final rows = await _db
         .from('digital_cards')
         .select()
@@ -65,7 +80,10 @@ class CardRepository {
         .limit(1);
 
     if ((rows as List).isEmpty) return null;
-    return _fetchWithItems(rows.first);
+    return _fetchWithItems(
+      rows.first,
+      includeOrganizationLogo: includeOrganizationLogo,
+    );
   }
 
   // ─── Check NFC serial status ─────────────────────────────────────────────
@@ -84,14 +102,20 @@ class CardRepository {
 
   // ─── Fetch public card by NFC serial (pre-manufactured cards) ────────────
 
-  static Future<DigitalCardModel?> fetchByNfcSerial(String serial) async {
+  static Future<DigitalCardModel?> fetchByNfcSerial(
+    String serial, {
+    bool includeOrganizationLogo = true,
+  }) async {
     final result = await _db.rpc(
       'get_user_id_by_nfc_serial',
       params: {'p_serial': serial},
     );
     final userId = result as String?;
     if (userId == null || userId.isEmpty) return null;
-    return fetchByUserId(userId);
+    return fetchByUserId(
+      userId,
+      includeOrganizationLogo: includeOrganizationLogo,
+    );
   }
 
   // ─── Activate NFC card (link serial → current user) ──────────────────────
@@ -209,26 +233,31 @@ class CardRepository {
   // ─── Shared helper ────────────────────────────────────────────────────────
 
   static Future<DigitalCardModel> _fetchWithItems(
-    Map<String, dynamic> cardJson,
-  ) async {
+    Map<String, dynamic> cardJson, {
+    bool includeOrganizationLogo = true,
+  }) async {
     final cardId = cardJson['id'] as String;
 
-    final contacts = await _db
+    final contactsFuture = _db
         .from('contact_items')
         .select()
         .eq('card_id', cardId)
         .eq('is_visible', true)
         .order('sort_order');
 
-    final socials = await _db
+    final socialsFuture = _db
         .from('social_links')
         .select()
         .eq('card_id', cardId)
         .eq('is_visible', true)
         .order('sort_order');
 
+    final contacts = await contactsFuture;
+    final socials = await socialsFuture;
+
     return buildCardModel(
       cardJson,
+      includeOrganizationLogo: includeOrganizationLogo,
       contactItems: (contacts as List)
           .map((e) => ContactItemModel.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -240,20 +269,29 @@ class CardRepository {
 
   static Future<DigitalCardModel> buildCardModel(
     Map<String, dynamic> cardJson, {
+    bool includeOrganizationLogo = true,
     List<ContactItemModel> contactItems = const [],
     List<SocialLinkModel> socialLinks = const [],
   }) async {
     final hydratedJson = Map<String, dynamic>.from(cardJson);
+    final storedLogo = resolveCompanyLogoUrl(
+      (hydratedJson['company_logo'] ?? hydratedJson['company_logo_url'])
+          as String?,
+    );
     hydratedJson.remove('company_logo_url');
     final resolvedOrgId = await resolveCardOrganizationId(hydratedJson);
     if (resolvedOrgId != null && resolvedOrgId.isNotEmpty) {
       hydratedJson['org_id'] = resolvedOrgId;
     }
-    final orgLogoUrl = await fetchOrganizationLogoUrl(resolvedOrgId);
-    if (orgLogoUrl != null && orgLogoUrl.isNotEmpty) {
-      hydratedJson['company_logo'] = orgLogoUrl;
-    } else {
-      hydratedJson.remove('company_logo');
+    if (storedLogo != null && storedLogo.isNotEmpty) {
+      hydratedJson['company_logo'] = storedLogo;
+    } else if (includeOrganizationLogo) {
+      final orgLogoUrl = await fetchOrganizationLogoUrl(resolvedOrgId);
+      if (orgLogoUrl != null && orgLogoUrl.isNotEmpty) {
+        hydratedJson['company_logo'] = orgLogoUrl;
+      } else {
+        hydratedJson.remove('company_logo');
+      }
     }
 
     return DigitalCardModel.fromJson(
@@ -265,6 +303,9 @@ class CardRepository {
 
   static Future<String?> fetchOrganizationLogoUrl(String? orgId) async {
     if (orgId == null || orgId.isEmpty) return null;
+    if (_organizationLogoUrlCache.containsKey(orgId)) {
+      return _organizationLogoUrlCache[orgId];
+    }
     try {
       final rows = await _db
           .from('organizations')
@@ -276,11 +317,14 @@ class CardRepository {
           rows.first['company_logo'] as String?,
         );
         if (resolved != null && resolved.isNotEmpty) {
+          _organizationLogoUrlCache[orgId] = resolved;
           return resolved;
         }
       }
     } catch (_) {}
-    return fetchOrganizationLogoUrlFromStorage(orgId);
+    final fallback = await fetchOrganizationLogoUrlFromStorage(orgId);
+    _organizationLogoUrlCache[orgId] = fallback;
+    return fallback;
   }
 
   static Future<String?> fetchOrganizationLogoUrlFromStorage(
@@ -320,14 +364,22 @@ class CardRepository {
     }
     final userId = (cardJson['user_id'] as String?)?.trim();
     if (userId == null || userId.isEmpty) return null;
+    if (_userOrganizationIdCache.containsKey(userId)) {
+      return _userOrganizationIdCache[userId];
+    }
 
     final rows = await _db
         .from('users')
         .select('org_id')
         .eq('id', userId)
         .limit(1);
-    if ((rows as List).isEmpty) return null;
-    return (rows.first['org_id'] as String?)?.trim();
+    if ((rows as List).isEmpty) {
+      _userOrganizationIdCache[userId] = null;
+      return null;
+    }
+    final resolvedOrgId = (rows.first['org_id'] as String?)?.trim();
+    _userOrganizationIdCache[userId] = resolvedOrgId;
+    return resolvedOrgId;
   }
 
   static String? resolveCompanyLogoUrl(String? storedValue) {

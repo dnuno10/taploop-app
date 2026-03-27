@@ -19,6 +19,8 @@ import '../../analytics/models/link_stat_model.dart';
 import '../../analytics/models/visit_event_model.dart';
 import '../../card/models/digital_card_model.dart';
 
+Color _panelBorderColor(BuildContext context) => context.borderSoft;
+
 class DashboardView extends StatefulWidget {
   final void Function(int index) onNavigate;
 
@@ -96,7 +98,7 @@ class _DashboardViewState extends State<DashboardView> {
     try {
       final results = await Future.wait([
         AnalyticsRepository.fetchSummary(cardId),
-        LeadRepository.fetchLeadsForCard(cardId),
+        LeadRepository.fetchDashboardLeadsForCard(cardId),
       ]);
 
       if (!mounted) return;
@@ -176,13 +178,40 @@ class _DashboardViewState extends State<DashboardView> {
                               ),
                             ],
                           )
+                        else if (isTablet)
+                          Column(
+                            children: [
+                              _buildOverviewStack(compact: true, narrow: false),
+                              const SizedBox(height: 18),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 6,
+                                    child: _LeadsTable(
+                                      leads: _sortedLeads,
+                                      onNavigate: widget.onNavigate,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 18),
+                                  Expanded(
+                                    flex: 5,
+                                    child: _RightRail(
+                                      analytics: _analytics,
+                                      leads: _sortedLeads,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
                         else
                           Column(
                             children: [
-                              _buildOverviewStack(compact: true),
+                              _buildOverviewStack(compact: true, narrow: true),
                               const SizedBox(height: 18),
-                              _RightRail(
-                                analytics: _analytics,
+                              _ActivityPanel(
+                                events: _analytics?.recentEvents ?? const [],
                                 leads: _sortedLeads,
                               ),
                               const SizedBox(height: 18),
@@ -190,6 +219,12 @@ class _DashboardViewState extends State<DashboardView> {
                                 leads: _sortedLeads,
                                 onNavigate: widget.onNavigate,
                               ),
+                              const SizedBox(height: 18),
+                              _TopLinksPanel(
+                                links: _analytics?.linkStats ?? const [],
+                              ),
+                              const SizedBox(height: 18),
+                              _ConversionPanel(analytics: _analytics),
                             ],
                           ),
                       ],
@@ -201,7 +236,7 @@ class _DashboardViewState extends State<DashboardView> {
     );
   }
 
-  Widget _buildOverviewStack({required bool compact}) {
+  Widget _buildOverviewStack({required bool compact, bool narrow = false}) {
     final analytics = _analytics;
     final leads = _sortedLeads;
     final growth = analytics?.weeklyGrowthPercent ?? 0;
@@ -210,70 +245,71 @@ class _DashboardViewState extends State<DashboardView> {
     final hotLeads = leads
         .where((lead) => lead.status == LeadStatus.hot)
         .length;
+    final statCards = [
+      _StatCard(
+        label: 'Tarjeta activa',
+        value: card?.isActive == true ? 'Activa' : 'Pendiente',
+        subtitle: card?.publicSlug.isNotEmpty == true
+            ? '@${card!.publicSlug}'
+            : 'Sin slug publicado',
+        tone: context.bgCard,
+        icon: Icons.badge_outlined,
+        compact: compact,
+      ),
+      _StatCard(
+        label: 'Visitas totales',
+        value: '${analytics?.totalVisits ?? 0}',
+        delta: '${growth >= 0 ? '+' : ''}${growth.toStringAsFixed(0)}%',
+        deltaPositive: growth >= 0,
+        tone: context.bgCard,
+        icon: Icons.visibility_outlined,
+        compact: compact,
+      ),
+      _StatCard(
+        label: 'Interacciones',
+        value: '${analytics?.totalClicks ?? 0}',
+        subtitle: 'Clics en enlaces y CTA',
+        tone: context.bgCard,
+        icon: Icons.ads_click_outlined,
+        compact: compact,
+      ),
+      _StatCard(
+        label: 'Leads activos',
+        value: '$totalLeads',
+        subtitle: '$hotLeads listos para seguimiento',
+        tone: context.bgCard,
+        icon: Icons.groups_2_outlined,
+        compact: compact,
+      ),
+    ];
 
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                label: 'Tarjeta activa',
-                value: card?.isActive == true ? 'Activa' : 'Pendiente',
-                subtitle: card?.publicSlug.isNotEmpty == true
-                    ? '@${card!.publicSlug}'
-                    : 'Sin slug publicado',
-                tone: context.bgCard,
-                icon: Icons.badge_outlined,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _StatCard(
-                label: 'Visitas totales',
-                value: '${analytics?.totalVisits ?? 0}',
-                delta: '${growth >= 0 ? '+' : ''}${growth.toStringAsFixed(0)}%',
-                deltaPositive: growth >= 0,
-                tone: context.bgCard,
-                icon: Icons.visibility_outlined,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: _StatCard(
-                label: 'Interacciones',
-                value: '${analytics?.totalClicks ?? 0}',
-                subtitle: 'Clics en enlaces y CTA',
-                tone: context.bgCard,
-                icon: Icons.ads_click_outlined,
-              ),
-            ),
-            if (!compact) ...[
-              const SizedBox(width: 14),
-              Expanded(
-                child: _StatCard(
-                  label: 'Leads activos',
-                  value: '$totalLeads',
-                  subtitle: '$hotLeads listos para seguimiento',
-                  tone: context.bgCard,
-                  icon: Icons.groups_2_outlined,
-                ),
-              ),
-            ],
-          ],
-        ),
+        _OverviewStatsGrid(cards: statCards, compact: compact),
         const SizedBox(height: 20),
         if (compact)
           Column(
             children: [
+              if (narrow) ...[
+                _QuickActions(
+                  onNavigate: widget.onNavigate,
+                  onOpenPublicCard: _openPublicCard,
+                  compact: true,
+                ),
+                const SizedBox(height: 18),
+              ],
               _CardPreviewPanel(
                 card: appState.currentCard!,
                 onOpenPublicCard: _openPublicCard,
+                compact: narrow,
               ),
               const SizedBox(height: 18),
-              _QuickActions(
-                onNavigate: widget.onNavigate,
-                onOpenPublicCard: _openPublicCard,
-              ),
+              if (!narrow)
+                _QuickActions(
+                  onNavigate: widget.onNavigate,
+                  onOpenPublicCard: _openPublicCard,
+                  compact: true,
+                ),
             ],
           )
         else
@@ -301,7 +337,7 @@ class _DashboardViewState extends State<DashboardView> {
           ),
         if (compact) ...[
           const SizedBox(height: 18),
-          _PerformancePanel(analytics: analytics),
+          _PerformancePanel(analytics: analytics, compact: narrow),
         ],
       ],
     );
@@ -340,6 +376,111 @@ class _DashboardHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = appState.currentUser;
     final isWide = MediaQuery.of(context).size.width >= 920;
+    final isCompact = MediaQuery.of(context).size.width < 680;
+    final actions = [
+      (
+        label: 'Editar tarjeta',
+        icon: Icons.edit_outlined,
+        filled: false,
+        onTap: () => onNavigate(1),
+      ),
+      (
+        label: 'Compartir',
+        icon: Icons.ios_share_outlined,
+        filled: false,
+        onTap: () => onNavigate(6),
+      ),
+      (
+        label: 'Ver perfil',
+        icon: Icons.arrow_outward_rounded,
+        filled: true,
+        onTap: onOpenPublicCard,
+      ),
+    ];
+
+    if (isCompact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Panel principal',
+                      style: GoogleFonts.outfit(
+                        color: context.textPrimary,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Monitorea visitas, leads y rendimiento de tu tarjeta TapLoop en un solo flujo.',
+                      style: GoogleFonts.dmSans(
+                        color: context.textSecondary,
+                        fontSize: 14,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: context.bgCard,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: _panelBorderColor(context)),
+                ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: context.bgSubtle,
+                  backgroundImage: user?.photoUrl?.isNotEmpty == true
+                      ? NetworkImage(user!.photoUrl!)
+                      : null,
+                  child: user?.photoUrl?.isNotEmpty == true
+                      ? null
+                      : Text(
+                          user?.initials ?? 'TL',
+                          style: GoogleFonts.outfit(
+                            color: context.textPrimary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = (constraints.maxWidth - 12) / 2;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final action in actions)
+                    SizedBox(
+                      width: cardWidth,
+                      child: _HeaderButton(
+                        label: action.label,
+                        icon: action.icon,
+                        filled: action.filled,
+                        onTap: action.onTap,
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+    }
 
     return Wrap(
       spacing: 16,
@@ -374,30 +515,19 @@ class _DashboardHeader extends StatelessWidget {
             ],
           ),
         ),
-        _HeaderButton(
-          label: 'Editar tarjeta',
-          icon: Icons.edit_outlined,
-          filled: false,
-          onTap: () => onNavigate(1),
-        ),
-        _HeaderButton(
-          label: 'Compartir',
-          icon: Icons.ios_share_outlined,
-          filled: false,
-          onTap: () => onNavigate(6),
-        ),
-        _HeaderButton(
-          label: 'Ver perfil',
-          icon: Icons.arrow_outward_rounded,
-          filled: true,
-          onTap: onOpenPublicCard,
-        ),
+        for (final action in actions)
+          _HeaderButton(
+            label: action.label,
+            icon: action.icon,
+            filled: action.filled,
+            onTap: action.onTap,
+          ),
         Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
             color: context.bgCard,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: context.borderColor),
+            border: Border.all(color: _panelBorderColor(context)),
           ),
           child: CircleAvatar(
             radius: 20,
@@ -483,6 +613,7 @@ class _StatCard extends StatelessWidget {
   final bool deltaPositive;
   final Color tone;
   final IconData icon;
+  final bool compact;
 
   const _StatCard({
     required this.label,
@@ -492,16 +623,17 @@ class _StatCard extends StatelessWidget {
     this.deltaPositive = true,
     required this.tone,
     required this.icon,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: EdgeInsets.all(compact ? 16 : 18),
       decoration: BoxDecoration(
         color: tone,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
+        border: Border.all(color: _panelBorderColor(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -547,7 +679,7 @@ class _StatCard extends StatelessWidget {
             value,
             style: GoogleFonts.outfit(
               color: context.textPrimary,
-              fontSize: 30,
+              fontSize: compact ? 24 : 30,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -568,10 +700,45 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+class _OverviewStatsGrid extends StatelessWidget {
+  final List<Widget> cards;
+  final bool compact;
+
+  const _OverviewStatsGrid({required this.cards, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!compact) {
+      return Row(
+        children: [
+          for (var i = 0; i < cards.length; i++) ...[
+            if (i > 0) const SizedBox(width: 14),
+            Expanded(child: cards[i]),
+          ],
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 14) / 2;
+        return Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            for (final card in cards) SizedBox(width: cardWidth, child: card),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _PerformancePanel extends StatelessWidget {
   final AnalyticsSummaryModel? analytics;
+  final bool compact;
 
-  const _PerformancePanel({required this.analytics});
+  const _PerformancePanel({required this.analytics, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
@@ -637,7 +804,7 @@ class _PerformancePanel extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           SizedBox(
-            height: 270,
+            height: compact ? 220 : 270,
             child: LineChart(
               LineChartData(
                 minY: 0,
@@ -746,10 +913,12 @@ class _PerformancePanel extends StatelessWidget {
 class _QuickActions extends StatelessWidget {
   final ValueChanged<int> onNavigate;
   final VoidCallback onOpenPublicCard;
+  final bool compact;
 
   const _QuickActions({
     required this.onNavigate,
     required this.onOpenPublicCard,
+    this.compact = false,
   });
 
   @override
@@ -802,17 +971,41 @@ class _QuickActions extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          ...actions.map(
-            (action) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _ActionRow(
-                icon: action.icon,
-                label: action.label,
-                description: action.description,
-                onTap: action.onTap,
+          if (compact)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = (constraints.maxWidth - 12) / 2;
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final action in actions)
+                      SizedBox(
+                        width: itemWidth,
+                        child: _ActionRow(
+                          icon: action.icon,
+                          label: action.label,
+                          description: action.description,
+                          onTap: action.onTap,
+                          compact: true,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            )
+          else
+            ...actions.map(
+              (action) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _ActionRow(
+                  icon: action.icon,
+                  label: action.label,
+                  description: action.description,
+                  onTap: action.onTap,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -824,12 +1017,14 @@ class _ActionRow extends StatelessWidget {
   final String label;
   final String description;
   final VoidCallback onTap;
+  final bool compact;
 
   const _ActionRow({
     required this.icon,
     required this.label,
     required this.description,
     required this.onTap,
+    this.compact = false,
   });
 
   @override
@@ -840,11 +1035,11 @@ class _ActionRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Ink(
-          padding: const EdgeInsets.all(14),
+          padding: EdgeInsets.all(compact ? 12 : 14),
           decoration: BoxDecoration(
             color: context.bgCard,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: context.borderColor),
+            border: Border.all(color: _panelBorderColor(context)),
           ),
           child: Row(
             children: [
@@ -867,9 +1062,11 @@ class _ActionRow extends StatelessWidget {
                       description,
                       style: GoogleFonts.dmSans(
                         color: context.textSecondary,
-                        fontSize: 12,
+                        fontSize: compact ? 11 : 12,
                         height: 1.35,
                       ),
+                      maxLines: compact ? 2 : null,
+                      overflow: compact ? TextOverflow.ellipsis : null,
                     ),
                   ],
                 ),
@@ -914,13 +1111,18 @@ class _RightRail extends StatelessWidget {
 class _CardPreviewPanel extends StatelessWidget {
   final DigitalCardModel card;
   final VoidCallback onOpenPublicCard;
+  final bool compact;
 
-  const _CardPreviewPanel({required this.card, required this.onOpenPublicCard});
+  const _CardPreviewPanel({
+    required this.card,
+    required this.onOpenPublicCard,
+    this.compact = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return _Panel(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 14 : 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -944,11 +1146,11 @@ class _CardPreviewPanel extends StatelessWidget {
           const SizedBox(height: 12),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(compact ? 16 : 20),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               color: context.bgCard,
-              border: Border.all(color: context.borderColor),
+              border: Border.all(color: _panelBorderColor(context)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1504,7 +1706,7 @@ class _LeadRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.bgCard,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.borderColor),
+        border: Border.all(color: _panelBorderColor(context)),
       ),
       child: Row(
         children: [
@@ -1625,7 +1827,7 @@ class _LeadCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.bgCard,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.borderColor),
+        border: Border.all(color: _panelBorderColor(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1716,7 +1918,7 @@ class _LeadMetric extends StatelessWidget {
         decoration: BoxDecoration(
           color: context.bgCard,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: context.borderColor),
+          border: Border.all(color: _panelBorderColor(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1759,7 +1961,7 @@ class _Panel extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.bgCard,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: context.borderColor),
+        border: Border.all(color: _panelBorderColor(context)),
       ),
       child: child,
     );

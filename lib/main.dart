@@ -135,7 +135,8 @@ final _router = GoRouter(
       path: '/nfc/:serial',
       builder: (context, state) {
         final serial = state.pathParameters['serial']!;
-        return PublicCardView(nfcSerial: serial);
+        final campaignId = state.uri.queryParameters['campaign'];
+        return PublicCardView(nfcSerial: serial, campaignId: campaignId);
       },
     ),
     GoRoute(
@@ -143,7 +144,8 @@ final _router = GoRouter(
       builder: (context, state) {
         final userId = state.pathParameters['userId']!;
         final via = state.uri.queryParameters['via'];
-        return PublicCardView(userId: userId, via: via);
+        final campaignId = state.uri.queryParameters['campaign'];
+        return PublicCardView(userId: userId, via: via, campaignId: campaignId);
       },
     ),
     GoRoute(
@@ -151,7 +153,8 @@ final _router = GoRouter(
       builder: (context, state) {
         final slug = state.pathParameters['slug']!;
         final via = state.uri.queryParameters['via'];
-        return PublicCardView(slug: slug, via: via);
+        final campaignId = state.uri.queryParameters['campaign'];
+        return PublicCardView(slug: slug, via: via, campaignId: campaignId);
       },
     ),
   ],

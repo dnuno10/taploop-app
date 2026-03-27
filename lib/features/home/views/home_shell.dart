@@ -149,7 +149,7 @@ class _DesktopShell extends StatelessWidget {
                   color: context.bgCard,
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(
-                    color: context.borderStrong.withValues(alpha: 0.3),
+                    color: context.borderStrongSoft,
                     width: 1.5,
                   ),
                 ),
@@ -269,7 +269,7 @@ class _DesktopShell extends StatelessWidget {
                     color: context.bgCard,
                     borderRadius: BorderRadius.circular(34),
                     border: Border.all(
-                      color: context.borderStrong.withValues(alpha: 0.3),
+                      color: context.borderStrongSoft,
                       width: 1.5,
                     ),
                   ),
@@ -310,7 +310,7 @@ class _MobileShell extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(28),
               ),
-              border: Border.all(color: context.borderStrong, width: 1.5),
+              border: Border.all(color: context.borderStrongSoft, width: 1.5),
             ),
             clipBehavior: Clip.hardEdge,
             child: IndexedStack(index: index, children: views),
@@ -323,7 +323,7 @@ class _MobileShell extends StatelessWidget {
           decoration: BoxDecoration(
             color: context.bgCard,
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: context.borderStrong, width: 1.5),
+            border: Border.all(color: context.borderStrongSoft, width: 1.5),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: BottomNavigationBar(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -25,6 +27,7 @@ class PublicCardView extends StatefulWidget {
   final String? slug;
   final String? userId;
   final String? nfcSerial;
+  final String? campaignId;
 
   /// 'qr' when opened from a QR scan, null/'' for regular link share
   final String? via;
@@ -33,6 +36,7 @@ class PublicCardView extends StatefulWidget {
     this.slug,
     this.userId,
     this.nfcSerial,
+    this.campaignId,
     this.via,
   }) : assert(slug != null || userId != null || nfcSerial != null);
 
@@ -58,16 +62,18 @@ class _PublicCardViewState extends State<PublicCardView> {
     _load();
   }
 
-  Future<DigitalCardModel?> _hydrateOrganizationLogo(
-    DigitalCardModel? card,
-  ) async {
-    if (card == null) return null;
+  Future<void> _hydrateOrganizationLogo(DigitalCardModel? card) async {
+    if (card == null || card.orgId == null || card.orgId!.isEmpty) return;
+    if (card.companyLogoUrl?.trim().isNotEmpty == true) return;
     final orgLogoUrl = await CardRepository.fetchOrganizationLogoUrl(
       card.orgId,
     );
-    if (orgLogoUrl == null || orgLogoUrl.isEmpty) return card;
-    if (orgLogoUrl == card.companyLogoUrl) return card;
-    return card.copyWith(companyLogoUrl: orgLogoUrl);
+    if (!mounted || _card?.id != card.id) return;
+    if (orgLogoUrl == null || orgLogoUrl.isEmpty) return;
+    if (_card?.companyLogoUrl == orgLogoUrl) return;
+    setState(() {
+      _card = _card?.copyWith(companyLogoUrl: orgLogoUrl);
+    });
   }
 
   Future<void> _load() async {
@@ -77,11 +83,16 @@ class _PublicCardViewState extends State<PublicCardView> {
       } else {
         DigitalCardModel? card;
         if (widget.userId != null) {
-          card = await CardRepository.fetchByUserId(widget.userId!);
+          card = await CardRepository.fetchByUserId(
+            widget.userId!,
+            includeOrganizationLogo: false,
+          );
         } else {
-          card = await CardRepository.fetchBySlug(widget.slug!);
+          card = await CardRepository.fetchBySlug(
+            widget.slug!,
+            includeOrganizationLogo: false,
+          );
         }
-        card = await _hydrateOrganizationLogo(card);
         if (mounted) {
           setState(() {
             _card = card;
@@ -91,8 +102,15 @@ class _PublicCardViewState extends State<PublicCardView> {
         }
         if (card != null && card.isActive) {
           final source = (widget.via == 'qr') ? 'qr' : 'link';
-          await AnalyticsRepository.recordVisit(card.id, source);
+          unawaited(
+            AnalyticsRepository.recordVisit(
+              card.id,
+              source,
+              campaignId: widget.campaignId,
+            ),
+          );
         }
+        unawaited(_hydrateOrganizationLogo(card));
       }
     } catch (e) {
       if (mounted) {
@@ -123,8 +141,9 @@ class _PublicCardViewState extends State<PublicCardView> {
       return;
     }
     // assigned — load the card
-    final card = await _hydrateOrganizationLogo(
-      await CardRepository.fetchByNfcSerial(widget.nfcSerial!),
+    final card = await CardRepository.fetchByNfcSerial(
+      widget.nfcSerial!,
+      includeOrganizationLogo: false,
     );
     if (mounted) {
       setState(() {
@@ -134,8 +153,15 @@ class _PublicCardViewState extends State<PublicCardView> {
       });
     }
     if (card != null && card.isActive) {
-      await AnalyticsRepository.recordVisit(card.id, 'nfc');
+      unawaited(
+        AnalyticsRepository.recordVisit(
+          card.id,
+          'nfc',
+          campaignId: widget.campaignId,
+        ),
+      );
     }
+    unawaited(_hydrateOrganizationLogo(card));
   }
 
   Future<void> _activate() async {
@@ -212,7 +238,7 @@ class _PublicCardViewState extends State<PublicCardView> {
             : 'Tarjeta digital desactivada por seguridad',
       );
     }
-    return _CardPage(card: _card!);
+    return _CardPage(card: _card!, campaignId: widget.campaignId);
   }
 }
 
@@ -355,7 +381,8 @@ Widget _buildCardHeader(DigitalCardModel card) {
 
 class _CardPage extends StatelessWidget {
   final DigitalCardModel card;
-  const _CardPage({required this.card});
+  final String? campaignId;
+  const _CardPage({required this.card, this.campaignId});
 
   @override
   Widget build(BuildContext context) {
@@ -381,6 +408,7 @@ class _CardPage extends StatelessWidget {
               accent: accent,
               textColor: textCol,
               cardId: card.id,
+              campaignId: campaignId,
             ),
           ),
         ],
@@ -394,6 +422,7 @@ class _CardPage extends StatelessWidget {
               accent: accent,
               textColor: textCol,
               cardId: card.id,
+              campaignId: campaignId,
             ),
           ),
         ],
@@ -413,7 +442,12 @@ class _CardPage extends StatelessWidget {
           ),
         ],
         SliverToBoxAdapter(
-          child: _FormsSection(card: card, accent: accent, textColor: textCol),
+          child: _FormsSection(
+            card: card,
+            accent: accent,
+            textColor: textCol,
+            campaignId: campaignId,
+          ),
         ),
         SliverToBoxAdapter(
           child: _Footer(card: card, accent: accent),
@@ -786,17 +820,20 @@ class _ContactSection extends StatelessWidget {
   final Color accent;
   final Color textColor;
   final String cardId;
+  final String? campaignId;
   const _ContactSection({
     required this.items,
     required this.accent,
     required this.textColor,
     required this.cardId,
+    this.campaignId,
   });
 
   Future<void> _handleTap(ContactItemModel item) async {
-    AnalyticsRepository.recordInteraction(
+    await AnalyticsRepository.recordInteraction(
       cardId: cardId,
       source: 'contact',
+      campaignId: campaignId,
       contactItemId: item.id,
     );
     final Uri uri;
@@ -909,17 +946,20 @@ class _SocialSection extends StatelessWidget {
   final Color accent;
   final Color textColor;
   final String cardId;
+  final String? campaignId;
   const _SocialSection({
     required this.links,
     required this.accent,
     required this.textColor,
     required this.cardId,
+    this.campaignId,
   });
 
   Future<void> _openUrl(SocialLinkModel link) async {
-    AnalyticsRepository.recordInteraction(
+    await AnalyticsRepository.recordInteraction(
       cardId: cardId,
       source: 'social',
+      campaignId: campaignId,
       socialLinkId: link.id,
     );
     final uri = Uri.parse(
@@ -1193,10 +1233,12 @@ class _FormsSection extends StatefulWidget {
   final DigitalCardModel card;
   final Color accent;
   final Color textColor;
+  final String? campaignId;
   const _FormsSection({
     required this.card,
     required this.accent,
     required this.textColor,
+    this.campaignId,
   });
 
   @override
@@ -1266,6 +1308,7 @@ class _FormsSectionState extends State<_FormsSection> {
                   card: widget.card,
                   accent: widget.accent,
                   textColor: widget.textColor,
+                  campaignId: widget.campaignId,
                 ),
               ),
           ],
@@ -1280,11 +1323,13 @@ class _FormCard extends StatefulWidget {
   final DigitalCardModel card;
   final Color accent;
   final Color textColor;
+  final String? campaignId;
   const _FormCard({
     required this.form,
     required this.card,
     required this.accent,
     required this.textColor,
+    this.campaignId,
   });
 
   @override
@@ -1415,14 +1460,16 @@ class _FormCardState extends State<_FormCard> {
         cardId: widget.card.id,
         formType: widget.form.id,
         name: name.isEmpty ? 'Anónimo' : name,
+        campaignId: widget.campaignId,
         email: email,
         phone: phone,
         company: company,
         formData: formData,
       );
-      AnalyticsRepository.recordInteraction(
+      await AnalyticsRepository.recordInteraction(
         cardId: widget.card.id,
         source: 'form',
+        campaignId: widget.campaignId,
         smartFormId: widget.form.id,
       );
       await markLocalLeadSubmission(

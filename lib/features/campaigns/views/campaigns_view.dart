@@ -1,4 +1,4 @@
-  import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -294,7 +294,11 @@ class _CampaignsViewState extends State<CampaignsView> {
             final idx = _campaigns.indexWhere((x) => x.id == updated.id);
             if (idx != -1) _campaigns[idx] = hydrated;
           });
-          TapLoopToast.show(context, 'Campaña actualizada correctamente.', TapLoopToastType.success);
+          TapLoopToast.show(
+            context,
+            'Campaña actualizada correctamente.',
+            TapLoopToastType.success,
+          );
         }
       } catch (e) {
         if (mounted) {
@@ -913,12 +917,20 @@ class _CampaignCardState extends State<_CampaignCard> {
     try {
       await CampaignRepository.deleteCampaign(widget.campaign.id);
       if (ctx.mounted) {
-        TapLoopToast.show(ctx, 'Campaña eliminada correctamente.', TapLoopToastType.success);
+        TapLoopToast.show(
+          ctx,
+          'Campaña eliminada correctamente.',
+          TapLoopToastType.success,
+        );
       }
       widget.onDeleted?.call();
     } catch (e) {
       if (ctx.mounted) {
-        TapLoopToast.show(ctx, 'Error al eliminar la campaña. Intenta nuevamente.', TapLoopToastType.error);
+        TapLoopToast.show(
+          ctx,
+          'Error al eliminar la campaña. Intenta nuevamente.',
+          TapLoopToastType.error,
+        );
       }
     }
   }
@@ -1077,38 +1089,9 @@ class _CampaignCardState extends State<_CampaignCard> {
                     icon: Icons.bolt_outlined,
                     label: '${c.interactionCount} interacciones',
                   ),
-                  _StatChip(
-                    icon: Icons.person_add_alt_outlined,
-                    label: '${c.leads} leads',
-                  ),
-                  _StatChip(
-                    icon: Icons.handshake_outlined,
-                    label: '${c.conversions} cierres',
-                  ),
-                  _StatChip(
-                    icon: Icons.percent_outlined,
-                    label: '${(c.conversionRate * 100).toStringAsFixed(0)}%',
-                  ),
                 ],
               ),
             ),
-
-          if (c.status != CampaignStatus.upcoming) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: c.conversionRate,
-                  minHeight: 3,
-                  backgroundColor: context.bgSubtle,
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    AppColors.primary,
-                  ),
-                ),
-              ),
-            ),
-          ],
 
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -1176,104 +1159,6 @@ class _CampaignDetailState extends State<_CampaignDetail> {
   List<Map<String, String>> _members = [];
   bool _loadingMembers = true;
 
-  bool get _membersLocked => widget.campaign.status == CampaignStatus.finished;
-
-  void _showMembersLockedFeedback() {
-    TapLoopToast.show(
-      context,
-      'No puedes modificar miembros porque se seleccionó una fecha pasada para la campaña. Cambia la fecha y actualiza la campaña para continuar.',
-      TapLoopToastType.warning,
-    );
-  }
-
-  Future<String> _friendlyMemberAssignmentErrorMessage(
-    Object error, {
-    List<Map<String, String>> attemptedUsers = const [],
-  }) async {
-    final raw = error.toString().replaceAll('\n', ' ').trim();
-    final orgId = widget.campaign.orgId ?? appState.currentUser?.orgId;
-
-    final userNameById = <String, String>{};
-    if (orgId != null && orgId.isNotEmpty) {
-      try {
-        final users = await CampaignRepository.fetchOrgUsers(orgId);
-        for (final user in users) {
-          final id = user['id'];
-          final name = user['name'];
-          if (id != null && id.isNotEmpty && name != null && name.isNotEmpty) {
-            userNameById[id] = name;
-          }
-        }
-      } catch (_) {}
-    }
-
-    final campaignNameById = <String, String>{
-      widget.campaign.id: widget.campaign.name,
-    };
-    if (orgId != null && orgId.isNotEmpty) {
-      try {
-        final campaigns = await CampaignRepository.fetchCampaignsForUser(
-          orgId: orgId,
-        );
-        for (final campaign in campaigns) {
-          campaignNameById[campaign.id] = campaign.name;
-        }
-      } catch (_) {}
-    }
-
-    final ids = _CampaignsViewState._uuidPattern
-        .allMatches(raw)
-        .map((m) => m.group(0)!)
-        .toList();
-    final matchedUserId = ids.cast<String?>().firstWhere(
-      (id) => id != null && userNameById.containsKey(id),
-      orElse: () => null,
-    );
-    final matchedCampaignId = ids.cast<String?>().firstWhere(
-      (id) => id != null && campaignNameById.containsKey(id),
-      orElse: () => null,
-    );
-    final attemptedNames = attemptedUsers
-        .map((user) => user['name']?.trim() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toList();
-
-    if (raw.toLowerCase().contains(
-          'duplicate key value violates unique constraint',
-        ) ||
-        raw.contains('campaign_members_campaign_user_uidx')) {
-      if (attemptedNames.length == 1) {
-        return '${attemptedNames.first} ya forma parte de esta campaña.';
-      }
-      if (attemptedNames.length > 1) {
-        return 'Uno o más miembros seleccionados ya forman parte de esta campaña.';
-      }
-      return 'Ese miembro ya forma parte de esta campaña.';
-    }
-
-    if (raw.toLowerCase().contains('horario traslapado')) {
-      final userName = matchedUserId == null
-          ? 'Este miembro'
-          : userNameById[matchedUserId]!;
-      final campaignName = matchedCampaignId == null
-          ? 'otra campaña'
-          : '"${campaignNameById[matchedCampaignId]!}"';
-      return '$userName ya pertenece a $campaignName en un horario traslapado. Ajusta el horario o cambia el miembro seleccionado.';
-    }
-
-    var cleaned = raw
-        .replaceFirst(RegExp(r'^[A-Za-z]+Exception\(message:\s*'), '')
-        .replaceFirst(RegExp(r',\s*code:.*$'), '')
-        .trim();
-    userNameById.forEach((id, name) => cleaned = cleaned.replaceAll(id, name));
-    campaignNameById.forEach(
-      (id, name) => cleaned = cleaned.replaceAll(id, name),
-    );
-    return cleaned.isEmpty || cleaned == raw
-        ? 'No se pudo agregar el equipo. Revisa el horario y los miembros seleccionados.'
-        : cleaned;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -1306,65 +1191,6 @@ class _CampaignDetailState extends State<_CampaignDetail> {
       }
       _loadingMembers = false;
     });
-  }
-
-  Future<void> _removeMember(String userId) async {
-    if (_membersLocked) {
-      _showMembersLockedFeedback();
-      return;
-    }
-    try {
-      await CampaignRepository.removeCampaignMember(widget.campaign.id, userId);
-      if (!mounted) return;
-      setState(() => _members.removeWhere((member) => member['id'] == userId));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al quitar miembro: $e')));
-    }
-  }
-
-  Future<void> _showAddMemberPicker() async {
-    if (_membersLocked) {
-      _showMembersLockedFeedback();
-      return;
-    }
-    final orgId = appState.currentUser?.orgId;
-    if (orgId == null || orgId.isEmpty) return;
-    final allUsers = await CampaignRepository.fetchOrgUsers(orgId);
-    final assignedIds = _members.map((member) => member['id']).toSet();
-    final available = allUsers
-        .where((user) => !assignedIds.contains(user['id']))
-        .toList();
-    if (!mounted) return;
-    if (available.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay más miembros disponibles')),
-      );
-      return;
-    }
-    final selected = await showDialog<List<Map<String, String>>>(
-      context: context,
-      builder: (_) => _MemberMultiSelectDialog(users: available),
-    );
-    if (selected == null || selected.isEmpty) return;
-    try {
-      await CampaignRepository.addCampaignMembers(
-        widget.campaign.id,
-        selected.map((user) => user['id']!).toList(),
-      );
-      if (!mounted) return;
-      setState(() => _members = [..._members, ...selected]);
-    } catch (e) {
-      if (!mounted) return;
-      final message = await _friendlyMemberAssignmentErrorMessage(
-        e,
-        attemptedUsers: selected,
-      );
-      if (!mounted) return;
-      TapLoopToast.show(context, message, TapLoopToastType.error);
-    }
   }
 
   Future<void> _showMemberAnalytics(Map<String, String> member) async {
@@ -1419,9 +1245,7 @@ class _CampaignDetailState extends State<_CampaignDetail> {
         ? campaign.assignedMemberNames.length
         : _members.length;
     final memberCount = visibleMemberCount == 0 ? 1 : visibleMemberCount;
-    final leadsPerMember = campaign.leads / memberCount;
     final interactionsPerMember = campaign.interactionCount / memberCount;
-    final conversionsPerMember = campaign.conversions / memberCount;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1443,10 +1267,6 @@ class _CampaignDetailState extends State<_CampaignDetail> {
                       : 'Fuentes: ${campaign.sourceChannels.join(', ')}',
                 ),
                 _StatChip(
-                  icon: Icons.person_add_alt_outlined,
-                  label: '${campaign.leads} leads generados',
-                ),
-                _StatChip(
                   icon: Icons.bolt_outlined,
                   label: '${campaign.interactionCount} interacciones',
                 ),
@@ -1457,11 +1277,7 @@ class _CampaignDetailState extends State<_CampaignDetail> {
             title: 'Rendimiento',
             child: Column(
               children: [
-                _PerformanceChart(
-                  interactions: campaign.interactionCount,
-                  leads: campaign.leads,
-                  conversions: campaign.conversions,
-                ),
+                _PerformanceChart(interactions: campaign.interactionCount),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -1474,22 +1290,8 @@ class _CampaignDetailState extends State<_CampaignDetail> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: _PerformanceKpi(
-                        label: 'Leads / miembro',
-                        value: leadsPerMember.toStringAsFixed(1),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _PerformanceKpi(
                         label: 'Interacciones / miembro',
                         value: interactionsPerMember.toStringAsFixed(1),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _PerformanceKpi(
-                        label: 'Cierres / miembro',
-                        value: conversionsPerMember.toStringAsFixed(1),
                       ),
                     ),
                   ],
@@ -1555,19 +1357,6 @@ class _CampaignDetailState extends State<_CampaignDetail> {
                         .toList(),
                   ),
           ),
-          if (campaign.status != CampaignStatus.upcoming)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                campaign.leads > 0
-                    ? 'Promedio actual: ${(campaign.interactionCount / campaign.leads).toStringAsFixed(1)} interacciones por lead.'
-                    : 'Sin leads registrados aún.',
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  color: context.textMuted,
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -1741,13 +1530,8 @@ class _AlwaysVisibleGeneralInfo extends StatelessWidget {
 class _DetailSection extends StatelessWidget {
   final String title;
   final Widget child;
-  final Widget? trailing;
 
-  const _DetailSection({
-    required this.title,
-    required this.child,
-    this.trailing,
-  });
+  const _DetailSection({required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1768,7 +1552,6 @@ class _DetailSection extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 8),
@@ -1861,12 +1644,10 @@ class _MemberCard extends StatelessWidget {
   final String? role;
   final String? jobTitle;
   final VoidCallback onInsights;
-  final VoidCallback? onRemove;
 
   const _MemberCard({
     required this.name,
     required this.onInsights,
-    this.onRemove,
     this.role,
     this.jobTitle,
   });
@@ -1922,16 +1703,6 @@ class _MemberCard extends StatelessWidget {
             tooltip: 'Ver analítica',
             visualDensity: VisualDensity.compact,
           ),
-          if (onRemove != null)
-            IconButton(
-              onPressed: onRemove,
-              icon: Icon(
-                Icons.close_rounded,
-                size: 18,
-                color: context.textMuted,
-              ),
-              visualDensity: VisualDensity.compact,
-            ),
         ],
       ),
     );
@@ -2045,13 +1816,6 @@ class _MemberAnalyticsDialog extends StatelessWidget {
                                     value: '${data.clicks}',
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _PerformanceKpi(
-                                    label: 'Formularios',
-                                    value: '${data.forms}',
-                                  ),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 10),
@@ -2061,20 +1825,6 @@ class _MemberAnalyticsDialog extends StatelessWidget {
                                   child: _PerformanceKpi(
                                     label: 'Interacciones',
                                     value: '${data.interactions}',
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _PerformanceKpi(
-                                    label: 'Leads',
-                                    value: '${data.leads}',
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _PerformanceKpi(
-                                    label: 'Cierres',
-                                    value: '${data.conversions}',
                                   ),
                                 ),
                               ],
@@ -2161,14 +1911,9 @@ class _CampaignMemberEventRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(
               Icons.timeline_outlined,
               size: 18,
               color: AppColors.primary,
@@ -2206,33 +1951,18 @@ class _CampaignMemberEventRow extends StatelessWidget {
 
 class _PerformanceChart extends StatelessWidget {
   final int interactions;
-  final int leads;
-  final int conversions;
 
-  const _PerformanceChart({
-    required this.interactions,
-    required this.leads,
-    required this.conversions,
-  });
+  const _PerformanceChart({required this.interactions});
 
   @override
   Widget build(BuildContext context) {
-    final values = [interactions, leads, conversions];
-    final maxValue = values.reduce((a, b) => a > b ? a : b).clamp(1, 1 << 30);
+    final maxValue = interactions.clamp(1, 1 << 30);
     return Column(
       children: [
         _MetricBarRow(
           label: 'Interacciones',
           value: interactions,
           ratio: interactions / maxValue,
-        ),
-        const SizedBox(height: 10),
-        _MetricBarRow(label: 'Leads', value: leads, ratio: leads / maxValue),
-        const SizedBox(height: 10),
-        _MetricBarRow(
-          label: 'Cierres',
-          value: conversions,
-          ratio: conversions / maxValue,
         ),
       ],
     );
@@ -3172,7 +2902,6 @@ class _FormSection extends StatelessWidget {
     );
   }
 }
-
 
 String _campaignHeadline(CampaignModel campaign) {
   final schedule = _formatTimeRange(campaign.startTime, campaign.endTime);

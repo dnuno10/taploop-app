@@ -14,9 +14,7 @@ import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
-import '../../../core/widgets/remote_brand_logo.dart';
 import '../../analytics/models/analytics_summary_model.dart';
-import '../models/digital_card_model.dart';
 import '../widgets/qr_code_widget.dart';
 
 class ShareCardView extends StatefulWidget {
@@ -358,7 +356,6 @@ class _CardHeroSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final a = analytics;
-    final card = appState.currentCard;
     final isDesktop = Responsive.isDesktop(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(hPad, 0, hPad, 0),
@@ -644,23 +641,6 @@ class _QrSectionState extends State<_QrSection> {
                 variant: _QrButtonVariant.outline,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _QrActionButton(
-                icon: Icons.ios_share_outlined,
-                label: 'Compartir QR',
-                onTap: () {
-                  final url = appState.currentCard?.publicUrl;
-                  if (url != null) {
-                    launchUrl(
-                      Uri.parse(url),
-                      mode: LaunchMode.externalApplication,
-                    );
-                  }
-                },
-                variant: _QrButtonVariant.filled,
-              ),
-            ),
           ],
         ),
       ],
@@ -668,7 +648,7 @@ class _QrSectionState extends State<_QrSection> {
   }
 }
 
-enum _QrButtonVariant { outline, filled }
+enum _QrButtonVariant { outline }
 
 class _QrActionButton extends StatelessWidget {
   final IconData icon;
@@ -685,7 +665,6 @@ class _QrActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFilled = variant == _QrButtonVariant.filled;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -693,31 +672,21 @@ class _QrActionButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 13),
           decoration: BoxDecoration(
-            color: isFilled ? context.textPrimary : context.bgCard,
+            color: context.bgCard,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isFilled ? context.textPrimary : context.borderColor,
-            ),
+            border: Border.all(color: context.borderColor),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isFilled
-                    ? (context.isDark ? Colors.black : Colors.white)
-                    : context.textSecondary,
-              ),
+              Icon(icon, size: 16, color: context.textSecondary),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: GoogleFonts.dmSans(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: isFilled
-                      ? (context.isDark ? Colors.black : Colors.white)
-                      : context.textSecondary,
+                  color: context.textSecondary,
                 ),
               ),
             ],
