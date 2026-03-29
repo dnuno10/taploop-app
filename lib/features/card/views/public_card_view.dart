@@ -829,13 +829,18 @@ class _ContactSection extends StatelessWidget {
     this.campaignId,
   });
 
+  Future<void> _launchFromTap(
+    Uri uri, {
+    LaunchMode mode = LaunchMode.platformDefault,
+  }) async {
+    try {
+      await launchUrl(uri, mode: mode, webOnlyWindowName: '_self');
+    } catch (error) {
+      debugPrint('[PublicCard] contact launch error for $uri: $error');
+    }
+  }
+
   Future<void> _handleTap(ContactItemModel item) async {
-    await AnalyticsRepository.recordInteraction(
-      cardId: cardId,
-      source: 'contact',
-      campaignId: campaignId,
-      contactItemId: item.id,
-    );
     final Uri uri;
     switch (item.type) {
       case ContactType.phone:
@@ -859,7 +864,16 @@ class _ContactSection extends StatelessWidget {
         );
         break;
     }
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
+    final launchFuture = _launchFromTap(uri);
+    unawaited(
+      AnalyticsRepository.recordInteraction(
+        cardId: cardId,
+        source: 'contact',
+        campaignId: campaignId,
+        contactItemId: item.id,
+      ),
+    );
+    await launchFuture;
   }
 
   @override
@@ -955,19 +969,32 @@ class _SocialSection extends StatelessWidget {
     this.campaignId,
   });
 
+  Future<void> _launchFromTap(Uri uri) async {
+    try {
+      await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_self',
+      );
+    } catch (error) {
+      debugPrint('[PublicCard] social launch error for $uri: $error');
+    }
+  }
+
   Future<void> _openUrl(SocialLinkModel link) async {
-    await AnalyticsRepository.recordInteraction(
-      cardId: cardId,
-      source: 'social',
-      campaignId: campaignId,
-      socialLinkId: link.id,
-    );
     final uri = Uri.parse(
       link.url.startsWith('http') ? link.url : 'https://${link.url}',
     );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    final launchFuture = _launchFromTap(uri);
+    unawaited(
+      AnalyticsRepository.recordInteraction(
+        cardId: cardId,
+        source: 'social',
+        campaignId: campaignId,
+        socialLinkId: link.id,
+      ),
+    );
+    await launchFuture;
   }
 
   String _shortHandle(String url) {
