@@ -146,9 +146,18 @@ class _DashboardViewState extends State<DashboardView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _DashboardHeader(
-                          onOpenPublicCard: _openPublicCard,
-                          onNavigate: widget.onNavigate,
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.only(bottom: 20),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(color: context.borderColor),
+                            ),
+                          ),
+                          child: _DashboardHeader(
+                            onOpenPublicCard: _openPublicCard,
+                            onNavigate: widget.onNavigate,
+                          ),
                         ),
                         const SizedBox(height: 20),
                         if (appState.currentCard == null)
@@ -2117,41 +2126,6 @@ class _ModeChip extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _StatusMeta {
-  final String label;
-  final Color foreground;
-  final Color background;
-
-  const _StatusMeta({
-    required this.label,
-    required this.foreground,
-    required this.background,
-  });
-}
-
-_StatusMeta _statusMeta(LeadStatus status) {
-  switch (status) {
-    case LeadStatus.hot:
-      return const _StatusMeta(
-        label: 'Hot',
-        foreground: Color(0xFFBA4E10),
-        background: Color(0xFFFFE6D8),
-      );
-    case LeadStatus.warm:
-      return const _StatusMeta(
-        label: 'Warm',
-        foreground: Color(0xFF6E59B2),
-        background: Color(0xFFECE3FF),
-      );
-    case LeadStatus.cold:
-      return const _StatusMeta(
-        label: 'Cold',
-        foreground: Color(0xFF31705A),
-        background: Color(0xFFE1F5ED),
-      );
   }
 }
 

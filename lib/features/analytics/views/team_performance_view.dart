@@ -179,7 +179,12 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
           slivers: [
             SliverToBoxAdapter(
               child: Container(
-                color: Colors.white,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: BorderSide(color: context.borderColor),
+                  ),
+                ),
                 padding: EdgeInsets.fromLTRB(
                   Responsive.isMobile(context) ? 20 : 32,
                   24,

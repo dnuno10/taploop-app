@@ -454,11 +454,7 @@ class _AdminViewState extends State<AdminView> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final isDesktop = Responsive.isDesktop(context);
-    final hPad = Responsive.isMobile(context)
-        ? 20.0
-        : isDesktop
-        ? 48.0
-        : 32.0;
+    final hPad = Responsive.isMobile(context) ? 20.0 : 24.0;
     final activeMembers = _members.where((member) => member.isActive).toList();
     final activeCount = activeMembers.length;
     final totalTaps = activeMembers.fold(
@@ -499,7 +495,10 @@ class _AdminViewState extends State<AdminView> {
         slivers: [
           SliverToBoxAdapter(
             child: Container(
-              color: context.bgCard,
+              decoration: BoxDecoration(
+                color: context.bgCard,
+                border: Border(bottom: BorderSide(color: context.borderColor)),
+              ),
               padding: EdgeInsets.fromLTRB(hPad, 24, hPad, 18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

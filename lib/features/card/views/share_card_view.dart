@@ -128,7 +128,12 @@ class _ShareCardViewState extends State<ShareCardView> {
             slivers: [
               SliverToBoxAdapter(
                 child: Container(
-                  color: context.bgCard,
+                  decoration: BoxDecoration(
+                    color: context.bgCard,
+                    border: Border(
+                      bottom: BorderSide(color: context.borderColor),
+                    ),
+                  ),
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
