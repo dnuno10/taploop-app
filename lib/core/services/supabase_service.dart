@@ -1,8 +1,8 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const _supabaseUrl = 'https://ejhkjyofrazyxtxkohfo.supabase.co';
+const _supabaseUrl = 'https://lxkhroekbinahrmjdjys.supabase.co';
 const _supabaseAnonKey =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqaGtqeW9mcmF6eXh0eGtvaGZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3Mjg1MjMsImV4cCI6MjA4NzMwNDUyM30.MsYH7bPlJdjJelexsJn_4mLvWu3NMUCTt6mcgn08dZ8';
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx4a2hyb2VrYmluYWhybWpkanlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4OTg2MTQsImV4cCI6MjA5MDQ3NDYxNH0.vwy6XwsedgMU6f4jH-onNsHMhYHrix7q13VQr8TMRa0';
 
 /// Call once at app start: `await SupabaseService.initialize();`
 class SupabaseService {

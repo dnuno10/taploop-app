@@ -87,28 +87,7 @@ class _LoginViewState extends State<LoginView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  'Demo privada de plataforma para',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.2,
-                    color: context.textSecondary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Image.asset(
-                  'assets/images/liomont-logo.png',
-                  height: 22,
-                  fit: BoxFit.contain,
-                ),
-              ],
-            ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 20),
             const AuthHeader(
               title: 'Bienvenido de nuevo',
               subtitle: 'Ingresa tu correo y contraseña para iniciar sesión',
