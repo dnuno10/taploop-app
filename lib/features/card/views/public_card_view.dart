@@ -559,8 +559,8 @@ class _HeroHeader extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 24),
                       child: _PublicCompanyLogo(
                         imageUrl: card.companyLogoUrl!,
-                        maxWidth: 160,
-                        height: 56,
+                        maxWidth: 220,
+                        height: 84,
                       ),
                     ),
                   // Avatar del usuario
@@ -724,8 +724,8 @@ class _BannerHeader extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 24),
                       child: _PublicCompanyLogo(
                         imageUrl: card.companyLogoUrl!,
-                        maxWidth: 140,
-                        height: 56,
+                        maxWidth: 200,
+                        height: 80,
                       ),
                     ),
                   // Row con avatar (izquierda) y datos (derecha)
