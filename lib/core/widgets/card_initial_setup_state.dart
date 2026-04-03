@@ -15,8 +15,13 @@ import '../../features/card/models/digital_card_model.dart';
 
 class CardInitialSetupState extends StatefulWidget {
   final VoidCallback? onLinked;
+  final bool createNewCardOnLink;
 
-  const CardInitialSetupState({super.key, this.onLinked});
+  const CardInitialSetupState({
+    super.key,
+    this.onLinked,
+    this.createNewCardOnLink = false,
+  });
 
   @override
   State<CardInitialSetupState> createState() => _CardInitialSetupStateState();
@@ -145,7 +150,10 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
       _error = null;
     });
 
-    final result = await _linkCardFromInput(rawValue);
+    final result = await _linkCardFromInput(
+      rawValue,
+      createNewCard: widget.createNewCardOnLink,
+    );
     if (!mounted) return;
 
     if (!result.success) {
@@ -153,10 +161,10 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
       return;
     }
 
-    widget.onLinked?.call();
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(result.message)));
+    widget.onLinked?.call();
     setState(() {
       _scannerVisible = false;
       _scannerPaused = false;
@@ -739,7 +747,10 @@ class _CardLinkResult {
   const _CardLinkResult({required this.success, required this.message});
 }
 
-Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
+Future<_CardLinkResult> _linkCardFromInput(
+  String rawValue, {
+  required bool createNewCard,
+}) async {
   final user = appState.currentUser;
   if (user == null) {
     return const _CardLinkResult(
@@ -756,6 +767,7 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
     );
   }
 
+  _TargetCardResolution? targetResolution;
   try {
     final status = await CardRepository.checkNfcSerial(serial);
     if (status == 'not_found') {
@@ -786,12 +798,19 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
       );
     }
 
-    final targetCard = await _resolveTargetCardForNfcLink(user);
+    targetResolution = await _resolveTargetCardForNfcLink(
+      user,
+      createNewCard: createNewCard,
+    );
+    final targetCard = targetResolution.card;
     final activated = await CardRepository.activateNfcCard(
       serial,
       targetCard.id,
     );
     if (!activated) {
+      if (targetResolution.createdNow) {
+        await CardRepository.deleteCard(targetCard.id);
+      }
       return const _CardLinkResult(
         success: false,
         message: 'No se pudo vincular la tarjeta. Intenta de nuevo.',
@@ -810,6 +829,9 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
       message: 'Tarjeta vinculada correctamente.',
     );
   } catch (_) {
+    if (targetResolution?.createdNow == true) {
+      await CardRepository.deleteCard(targetResolution!.card.id);
+    }
     return const _CardLinkResult(
       success: false,
       message: 'Ocurrio un error al vincular la tarjeta.',
@@ -817,19 +839,42 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
   }
 }
 
-Future<DigitalCardModel> _resolveTargetCardForNfcLink(UserModel user) async {
+Future<_TargetCardResolution> _resolveTargetCardForNfcLink(
+  UserModel user, {
+  required bool createNewCard,
+}) async {
+  if (createNewCard) {
+    final createdCard = await CardRepository.createCardForUser(
+      userId: user.id,
+      orgId: user.orgId,
+      fallbackName: 'Nueva tarjeta',
+      fallbackJobTitle: '',
+      fallbackCompany: '',
+    );
+    return _TargetCardResolution(card: createdCard, createdNow: true);
+  }
+
   final selectedCard = appState.currentCard;
-  if (selectedCard != null) return selectedCard;
+  if (selectedCard != null) {
+    return _TargetCardResolution(card: selectedCard, createdNow: false);
+  }
 
   if (appState.userCards.isNotEmpty) {
     final fallback = appState.userCards.first;
     appState.selectCardById(fallback.id);
-    return fallback;
+    return _TargetCardResolution(card: fallback, createdNow: false);
   }
 
   final createdCard = await CardRepository.ensureDigitalCardForUser(user.id);
   appState.addCard(createdCard);
-  return createdCard;
+  return _TargetCardResolution(card: createdCard, createdNow: true);
+}
+
+class _TargetCardResolution {
+  final DigitalCardModel card;
+  final bool createdNow;
+
+  const _TargetCardResolution({required this.card, required this.createdNow});
 }
 
 String? _extractNfcSerial(String rawValue) {

@@ -87,6 +87,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void removeCard(String cardId) {
+    _userCards = _userCards.where((card) => card.id != cardId).toList();
+    if (_currentCard?.id == cardId) {
+      _currentCard = _userCards.isEmpty ? null : _userCards.first;
+    }
+    notifyListeners();
+  }
+
   void updateCard(DigitalCardModel card) {
     _currentCard = card;
     final index = _userCards.indexWhere((item) => item.id == card.id);

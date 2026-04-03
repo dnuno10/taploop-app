@@ -542,6 +542,10 @@ class CardRepository {
     await _db.from('digital_cards').update(card.toJson()).eq('id', card.id);
   }
 
+  static Future<void> deleteCard(String cardId) async {
+    await _db.from('digital_cards').delete().eq('id', cardId);
+  }
+
   static Future<void> setCardActiveState({
     required String cardId,
     required bool isActive,

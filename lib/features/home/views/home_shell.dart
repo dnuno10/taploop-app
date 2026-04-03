@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/data/app_state.dart';
-import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
+import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/taploop_logo.dart';
 import '../../admin/views/admin_view.dart';
 import '../../analytics/views/analytics_dashboard_view.dart';
@@ -59,23 +59,34 @@ class _HomeShellState extends State<HomeShell> {
 
     setState(() => _creatingCard = true);
     try {
-      final card = await CardRepository.createCardForUser(
-        userId: user.id,
-        orgId: user.orgId,
-        fallbackName: user.name,
-        fallbackJobTitle: user.jobTitle,
-      );
       if (!mounted) return;
-      appState.addCard(card);
-      setState(() => _index = 1);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nueva tarjeta creada correctamente.')),
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 980),
+            child: CardInitialSetupState(
+              createNewCardOnLink: true,
+              onLinked: () {
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop();
+                }
+                if (mounted) {
+                  setState(() => _index = 1);
+                }
+              },
+            ),
+          ),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo crear la tarjeta. Intenta de nuevo.'),
+          content: Text('No se pudo iniciar la vinculación de la tarjeta.'),
         ),
       );
     } finally {
