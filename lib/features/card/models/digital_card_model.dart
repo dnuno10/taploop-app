@@ -201,7 +201,7 @@ class DigitalCardModel {
     if (profilePhotoUrl != null) 'profile_photo_url': profilePhotoUrl,
   };
 
-  String get publicUrl => 'https://liomont.taploop.com.mx/$publicSlug';
+  String get publicUrl => 'https://app.taploop.com.mx/$publicSlug';
 
   DigitalCardModel copyWith({
     String? id,

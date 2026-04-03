@@ -2989,7 +2989,7 @@ class _AdminPreviewPanel extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'liomont.taploop.com.mx/${card.publicSlug}',
+            'app.taploop.com.mx/${card.publicSlug}',
             style: GoogleFonts.dmSans(fontSize: 12, color: context.textMuted),
           ),
           const SizedBox(height: 24),

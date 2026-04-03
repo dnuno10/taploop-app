@@ -623,7 +623,7 @@ class _QrSectionState extends State<_QrSection> {
               ),
               const SizedBox(height: 12),
               Text(
-                'liomont.taploop.com.mx/${appState.currentCard?.publicSlug ?? ''}',
+                'app.taploop.com.mx/${appState.currentCard?.publicSlug ?? ''}',
                 style: GoogleFonts.dmSans(
                   fontSize: 13,
                   color: context.textSecondary,
