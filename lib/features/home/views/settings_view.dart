@@ -7,7 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/widgets/taploop_button.dart';
 import '../../../core/widgets/taploop_text_field.dart';
-import '../../../main.dart' show themeModeNotifier;
+import '../../../core/widgets/taploop_toast.dart';
 import '../../auth/models/user_model.dart';
 import '../../card/models/digital_card_model.dart';
 
@@ -46,14 +46,18 @@ class _SettingsViewState extends State<SettingsView> {
       _currentPasswordCtrl.clear();
       _newPasswordCtrl.clear();
       _confirmPasswordCtrl.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Contraseña actualizada correctamente.')),
+      TapLoopToast.show(
+        context,
+        'Contraseña actualizada correctamente.',
+        TapLoopToastType.success,
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      TapLoopToast.show(
         context,
-      ).showSnackBar(SnackBar(content: Text(_friendlyPasswordError(error))));
+        _friendlyPasswordError(error),
+        TapLoopToastType.error,
+      );
     } finally {
       if (mounted) setState(() => _changingPassword = false);
     }
@@ -123,30 +127,6 @@ class _SettingsViewState extends State<SettingsView> {
                     padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
                     children: [
                       _ProfileCard(user: user, card: appState.currentCard),
-                      const SizedBox(height: 20),
-                      _SettingsSection(
-                        title: 'Apariencia',
-                        child: ValueListenableBuilder<ThemeMode>(
-                          valueListenable: themeModeNotifier,
-                          builder: (_, mode, __) => _SettingsRow(
-                            icon: mode == ThemeMode.dark
-                                ? Icons.dark_mode_outlined
-                                : Icons.light_mode_outlined,
-                            title: 'Modo oscuro',
-                            subtitle:
-                                'Cambia entre el tema claro y oscuro de la aplicación.',
-                            trailing: Switch.adaptive(
-                              value: mode == ThemeMode.dark,
-                              onChanged: (value) {
-                                themeModeNotifier.value = value
-                                    ? ThemeMode.dark
-                                    : ThemeMode.light;
-                              },
-                              activeTrackColor: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
                       const SizedBox(height: 20),
                       _SettingsSection(
                         title: 'Seguridad',
@@ -382,7 +362,6 @@ class _SettingsRow extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final Widget? trailing;
   final VoidCallback? onTap;
   final Color? titleColor;
 
@@ -390,7 +369,6 @@ class _SettingsRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
-    this.trailing,
     this.onTap,
     this.titleColor,
   });
@@ -439,7 +417,6 @@ class _SettingsRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) trailing!,
           ],
         ),
       ),
