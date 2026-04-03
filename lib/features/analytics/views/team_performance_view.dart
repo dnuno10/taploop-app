@@ -9,6 +9,7 @@ import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
+import '../../../core/widgets/empty_data_state.dart';
 import '../models/lead_model.dart';
 import '../models/team_member_model.dart';
 
@@ -217,6 +218,14 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
             if (_loading)
               const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_members.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: EmptyDataState(
+                  centered: true,
+                  hint: 'Aún no hay registros del equipo para mostrar.',
+                ),
               )
             else ...[
               SliverToBoxAdapter(
@@ -926,29 +935,40 @@ class _TeamTrendSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasTrendData =
+        viewsSeries.any((value) => value > 0) ||
+        tapsSeries.any((value) => value > 0) ||
+        clicksSeries.any((value) => value > 0);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _TrendRow(
-          label: 'Vistas',
-          total: viewsSeries.fold(0, (a, b) => a + b),
-          series: viewsSeries,
-          color: AppColors.primary,
-        ),
-        const SizedBox(height: 12),
-        _TrendRow(
-          label: 'Taps',
-          total: tapsSeries.fold(0, (a, b) => a + b),
-          series: tapsSeries,
-          color: const Color(0xFF0F9D58),
-        ),
-        const SizedBox(height: 12),
-        _TrendRow(
-          label: 'Clicks en enlace',
-          total: clicksSeries.fold(0, (a, b) => a + b),
-          series: clicksSeries,
-          color: const Color(0xFFE67E22),
-        ),
+        if (!hasTrendData)
+          const EmptyDataState(
+            hint: 'Aún no hay actividad del equipo registrada.',
+          )
+        else ...[
+          _TrendRow(
+            label: 'Vistas',
+            total: viewsSeries.fold(0, (a, b) => a + b),
+            series: viewsSeries,
+            color: AppColors.primary,
+          ),
+          const SizedBox(height: 12),
+          _TrendRow(
+            label: 'Taps',
+            total: tapsSeries.fold(0, (a, b) => a + b),
+            series: tapsSeries,
+            color: const Color(0xFF0F9D58),
+          ),
+          const SizedBox(height: 12),
+          _TrendRow(
+            label: 'Clicks en enlace',
+            total: clicksSeries.fold(0, (a, b) => a + b),
+            series: clicksSeries,
+            color: const Color(0xFFE67E22),
+          ),
+        ],
       ],
     );
   }

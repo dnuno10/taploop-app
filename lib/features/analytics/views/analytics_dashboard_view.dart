@@ -13,6 +13,7 @@ import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
+import '../../../core/widgets/empty_data_state.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../../analytics/models/analytics_summary_model.dart';
 import '../../analytics/widgets/visit_event_tile.dart';
@@ -29,6 +30,14 @@ Color _analyticsPanelBorderColor(BuildContext context) => context.borderSoft;
 
 Color _pipelinePanelSurfaceColor(BuildContext context) =>
     context.bgPage.withValues(alpha: 0.5);
+
+bool _hasAnalyticsRecords(AnalyticsSummaryModel analytics) {
+  return analytics.totalInteractions > 0 ||
+      analytics.totalQrScans > 0 ||
+      analytics.linkStats.isNotEmpty ||
+      analytics.recentEvents.isNotEmpty ||
+      analytics.visitsByDay.any((value) => value > 0);
+}
 
 class AnalyticsDashboardView extends StatefulWidget {
   const AnalyticsDashboardView({super.key});
@@ -468,10 +477,15 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
                                         child: CircularProgressIndicator(),
                                       ),
                                     )
-                                  : analytics == null
+                                  : analytics == null ||
+                                        !_hasAnalyticsRecords(analytics)
                                   ? const SizedBox(
                                       height: 300,
-                                      child: Center(child: Text('Sin datos')),
+                                      child: EmptyDataState(
+                                        centered: true,
+                                        hint:
+                                            'No hay registros en el rango seleccionado.',
+                                      ),
                                     )
                                   : isDesktop
                                   ? _DesktopLayout(

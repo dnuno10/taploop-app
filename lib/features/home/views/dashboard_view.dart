@@ -13,6 +13,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
+import '../../../core/widgets/empty_data_state.dart';
 import '../../analytics/models/analytics_summary_model.dart';
 import '../../analytics/models/lead_model.dart';
 import '../../analytics/models/link_stat_model.dart';
@@ -22,6 +23,15 @@ import '../../card/models/digital_card_model.dart';
 Color _panelBorderColor(BuildContext context) => context.borderSoft;
 Color _panelSurfaceColor(BuildContext context) =>
     context.bgSubtle.withValues(alpha: 0.5);
+
+bool _hasAnalyticsData(AnalyticsSummaryModel? analytics) {
+  if (analytics == null) return false;
+  return analytics.totalInteractions > 0 ||
+      analytics.totalQrScans > 0 ||
+      analytics.linkStats.isNotEmpty ||
+      analytics.recentEvents.isNotEmpty ||
+      analytics.visitsByDay.any((value) => value > 0);
+}
 
 class DashboardView extends StatefulWidget {
   final void Function(int index) onNavigate;
@@ -756,6 +766,7 @@ class _PerformancePanel extends StatelessWidget {
     final visits = analytics?.visitsByDay ?? const [0, 0, 0, 0, 0, 0, 0];
     final clicks = _deriveSeries(visits, analytics?.totalClicks ?? 0);
     final taps = _deriveSeries(visits, analytics?.totalTaps ?? 0);
+    final hasData = _hasAnalyticsData(analytics);
     final maxValue = [
       ...visits,
       ...clicks,
@@ -804,117 +815,123 @@ class _PerformancePanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 18,
-            runSpacing: 8,
-            children: const [
-              _ChartLegend(color: AppColors.primary, label: 'Visitas'),
-              _ChartLegend(color: Color(0xFF3F3F46), label: 'Clics'),
-              _ChartLegend(color: Color(0xFF2E8B57), label: 'Toques NFC'),
-            ],
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: compact ? 220 : 270,
-            child: LineChart(
-              LineChartData(
-                minY: 0,
-                maxY: chartMax,
-                gridData: FlGridData(
-                  show: true,
-                  horizontalInterval: leftInterval,
-                  drawVerticalLine: false,
-                  getDrawingHorizontalLine: (value) =>
-                      FlLine(color: context.borderColor, strokeWidth: 1),
-                ),
-                borderData: FlBorderData(show: false),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
+          if (!hasData)
+            const EmptyDataState(
+              hint: 'Aún no hay actividad registrada para mostrar.',
+            )
+          else ...[
+            Wrap(
+              spacing: 18,
+              runSpacing: 8,
+              children: const [
+                _ChartLegend(color: AppColors.primary, label: 'Visitas'),
+                _ChartLegend(color: Color(0xFF3F3F46), label: 'Clics'),
+                _ChartLegend(color: Color(0xFF2E8B57), label: 'Toques NFC'),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: compact ? 220 : 270,
+              child: LineChart(
+                LineChartData(
+                  minY: 0,
+                  maxY: chartMax,
+                  gridData: FlGridData(
+                    show: true,
+                    horizontalInterval: leftInterval,
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (value) =>
+                        FlLine(color: context.borderColor, strokeWidth: 1),
                   ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 34,
-                      interval: leftInterval,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: GoogleFonts.dmSans(
-                            color: context.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        );
-                      },
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
                     ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: 1,
-                      getTitlesWidget: (value, meta) {
-                        const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-                        final index = value.toInt();
-                        if (index < 0 || index >= labels.length) {
-                          return const SizedBox.shrink();
-                        }
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            labels[index],
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 34,
+                        interval: leftInterval,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toInt().toString(),
                             style: GoogleFonts.dmSans(
                               color: context.textSecondary,
                               fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w500,
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: 1,
+                        getTitlesWidget: (value, meta) {
+                          const labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+                          final index = value.toInt();
+                          if (index < 0 || index >= labels.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              labels[index],
+                              style: GoogleFonts.dmSans(
+                                color: context.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      isCurved: true,
+                      barWidth: 3,
+                      color: AppColors.primary,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(show: false),
+                      spots: [
+                        for (var i = 0; i < visits.length; i++)
+                          FlSpot(i.toDouble(), visits[i].toDouble()),
+                      ],
+                    ),
+                    LineChartBarData(
+                      isCurved: true,
+                      barWidth: 2,
+                      color: const Color(0xFF3F3F46),
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(show: false),
+                      spots: [
+                        for (var i = 0; i < clicks.length; i++)
+                          FlSpot(i.toDouble(), clicks[i].toDouble()),
+                      ],
+                    ),
+                    LineChartBarData(
+                      isCurved: true,
+                      barWidth: 2,
+                      color: const Color(0xFF2E8B57),
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(show: false),
+                      spots: [
+                        for (var i = 0; i < taps.length; i++)
+                          FlSpot(i.toDouble(), taps[i].toDouble()),
+                      ],
+                    ),
+                  ],
                 ),
-                lineBarsData: [
-                  LineChartBarData(
-                    isCurved: true,
-                    barWidth: 3,
-                    color: AppColors.primary,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(show: false),
-                    spots: [
-                      for (var i = 0; i < visits.length; i++)
-                        FlSpot(i.toDouble(), visits[i].toDouble()),
-                    ],
-                  ),
-                  LineChartBarData(
-                    isCurved: true,
-                    barWidth: 2,
-                    color: const Color(0xFF3F3F46),
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(show: false),
-                    spots: [
-                      for (var i = 0; i < clicks.length; i++)
-                        FlSpot(i.toDouble(), clicks[i].toDouble()),
-                    ],
-                  ),
-                  LineChartBarData(
-                    isCurved: true,
-                    barWidth: 2,
-                    color: const Color(0xFF2E8B57),
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(show: false),
-                    spots: [
-                      for (var i = 0; i < taps.length; i++)
-                        FlSpot(i.toDouble(), taps[i].toDouble()),
-                    ],
-                  ),
-                ],
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1254,6 +1271,10 @@ class _ConversionPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totalInteractions = math.max(analytics?.totalInteractions ?? 0, 1);
+    final hasData =
+        (analytics?.totalVisits ?? 0) > 0 ||
+        (analytics?.totalTaps ?? 0) > 0 ||
+        (analytics?.totalClicks ?? 0) > 0;
     final metrics = [
       (
         label: 'Visitas',
@@ -1293,17 +1314,22 @@ class _ConversionPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          ...metrics.map(
-            (metric) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: _ProgressMetric(
-                label: metric.label,
-                value: metric.value,
-                progress: metric.value / totalInteractions,
-                color: metric.color,
+          if (!hasData)
+            const EmptyDataState(
+              hint: 'Aún no hay interacciones registradas en este periodo.',
+            )
+          else
+            ...metrics.map(
+              (metric) => Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: _ProgressMetric(
+                  label: metric.label,
+                  value: metric.value,
+                  progress: metric.value / totalInteractions,
+                  color: metric.color,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -1437,12 +1463,8 @@ class _TopLinksPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           if (topLinks.isEmpty)
-            Text(
-              'Aún no hay clics suficientes para mostrar ranking.',
-              style: GoogleFonts.dmSans(
-                color: context.textSecondary,
-                fontSize: 12,
-              ),
+            const EmptyDataState(
+              hint: 'Aún no hay clics suficientes para mostrar el ranking.',
             )
           else
             ...topLinks
@@ -1534,12 +1556,8 @@ class _ActivityPanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           if (items.isEmpty)
-            Text(
-              'Todavía no hay eventos recientes.',
-              style: GoogleFonts.dmSans(
-                color: context.textSecondary,
-                fontSize: 12,
-              ),
+            const EmptyDataState(
+              hint: 'Todavía no hay eventos recientes registrados.',
             )
           else
             ...items.map(
@@ -1638,16 +1656,7 @@ class _LeadsTable extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           if (leads.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              child: Text(
-                'Todavía no hay leads capturados.',
-                style: GoogleFonts.dmSans(
-                  color: context.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-            )
+            const EmptyDataState(hint: 'Todavía no hay leads capturados.')
           else if (isDesktop)
             Column(
               children: [

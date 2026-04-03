@@ -10,6 +10,8 @@ import '../data/repositories/card_repository.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme_extensions.dart';
+import '../../features/auth/models/user_model.dart';
+import '../../features/card/models/digital_card_model.dart';
 
 class CardInitialSetupState extends StatefulWidget {
   final VoidCallback? onLinked;
@@ -218,7 +220,7 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                     const SizedBox(height: 12),
                     Text(
                       _usesEmbeddedScanner
-                          ? 'La vinculacion se realiza unicamente con la camara del dispositivo. Al validar el QR se enlaza la tarjeta en nfc_cards con tu usuario y, si corresponde, se crea tu digital_card para habilitar clicks, taps, visitas, leads y metricas.'
+                          ? 'La vinculacion se realiza unicamente con la camara del dispositivo. Al validar el QR se enlaza el NFC a la tarjeta digital seleccionada y, si no tienes una creada, se genera una base para habilitar clicks, taps, visitas, leads y metricas.'
                           : 'En navegador se abrira la camara del dispositivo para escanear el QR en vivo y vincular la tarjeta.',
                       style: GoogleFonts.dmSans(
                         color: context.textSecondary,
@@ -766,8 +768,12 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
     if (status == 'assigned') {
       final linkedCard = await CardRepository.fetchByNfcSerial(serial);
       if (linkedCard != null && linkedCard.userId == user.id) {
-        final myCard = await AuthService.fetchUserCard(user.id) ?? linkedCard;
-        appState.setCard(myCard);
+        final cards = await AuthService.fetchUserCards(user.id);
+        if (cards.isEmpty) {
+          appState.setCard(linkedCard);
+        } else {
+          appState.setCards(cards, selectedCardId: linkedCard.id);
+        }
         return const _CardLinkResult(
           success: true,
           message: 'Esta tarjeta ya estaba vinculada a tu cuenta.',
@@ -780,7 +786,11 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
       );
     }
 
-    final activated = await CardRepository.activateNfcCard(serial);
+    final targetCard = await _resolveTargetCardForNfcLink(user);
+    final activated = await CardRepository.activateNfcCard(
+      serial,
+      targetCard.id,
+    );
     if (!activated) {
       return const _CardLinkResult(
         success: false,
@@ -788,10 +798,13 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
       );
     }
 
-    final card =
-        await AuthService.fetchUserCard(user.id) ??
-        await CardRepository.fetchByNfcSerial(serial);
-    appState.setCard(card);
+    final cards = await AuthService.fetchUserCards(user.id);
+    if (cards.isEmpty) {
+      final card = await CardRepository.fetchByNfcSerial(serial);
+      appState.setCard(card);
+    } else {
+      appState.setCards(cards, selectedCardId: targetCard.id);
+    }
     return const _CardLinkResult(
       success: true,
       message: 'Tarjeta vinculada correctamente.',
@@ -802,6 +815,21 @@ Future<_CardLinkResult> _linkCardFromInput(String rawValue) async {
       message: 'Ocurrio un error al vincular la tarjeta.',
     );
   }
+}
+
+Future<DigitalCardModel> _resolveTargetCardForNfcLink(UserModel user) async {
+  final selectedCard = appState.currentCard;
+  if (selectedCard != null) return selectedCard;
+
+  if (appState.userCards.isNotEmpty) {
+    final fallback = appState.userCards.first;
+    appState.selectCardById(fallback.id);
+    return fallback;
+  }
+
+  final createdCard = await CardRepository.ensureDigitalCardForUser(user.id);
+  appState.addCard(createdCard);
+  return createdCard;
 }
 
 String? _extractNfcSerial(String rawValue) {

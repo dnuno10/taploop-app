@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/data/app_state.dart';
+import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
@@ -11,9 +12,11 @@ import '../../admin/views/admin_view.dart';
 import '../../analytics/views/analytics_dashboard_view.dart';
 import '../../analytics/views/team_performance_view.dart';
 import '../../campaigns/views/campaigns_view.dart';
+import '../../card/models/digital_card_model.dart';
 import '../../card/views/edit_card_view.dart';
 import '../../card/views/share_card_view.dart';
 import 'dashboard_view.dart';
+import 'settings_view.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -24,26 +27,59 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  bool _creatingCard = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _loadCardIfMissing();
+      _loadCardsIfMissing();
     });
   }
 
-  void _loadCardIfMissing() async {
-    if (appState.loadingCard) return;
-    if (appState.currentCard == null && appState.currentUser != null) {
-      appState.setLoadingCard(true);
-      try {
-        final card = await AuthService.fetchUserCard(appState.currentUser!.id);
-        if (mounted) appState.setCard(card);
-      } finally {
-        if (mounted) appState.setLoadingCard(false);
-      }
+  void _loadCardsIfMissing() async {
+    final user = appState.currentUser;
+    if (appState.loadingCard || user == null || appState.userCards.isNotEmpty) {
+      return;
+    }
+
+    appState.setLoadingCard(true);
+    try {
+      final cards = await AuthService.fetchUserCards(user.id);
+      if (mounted) appState.setCards(cards);
+    } finally {
+      if (mounted) appState.setLoadingCard(false);
+    }
+  }
+
+  Future<void> _createCard() async {
+    final user = appState.currentUser;
+    if (user == null || _creatingCard) return;
+
+    setState(() => _creatingCard = true);
+    try {
+      final card = await CardRepository.createCardForUser(
+        userId: user.id,
+        orgId: user.orgId,
+        fallbackName: user.name,
+        fallbackJobTitle: user.jobTitle,
+      );
+      if (!mounted) return;
+      appState.addCard(card);
+      setState(() => _index = 1);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nueva tarjeta creada correctamente.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo crear la tarjeta. Intenta de nuevo.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _creatingCard = false);
     }
   }
 
@@ -55,6 +91,7 @@ class _HomeShellState extends State<HomeShell> {
     const TeamPerformanceView(),
     const CampaignsView(),
     const AdminView(),
+    const SettingsView(),
   ];
 
   static const _navItems = [
@@ -93,25 +130,45 @@ class _HomeShellState extends State<HomeShell> {
       activeIcon: Icons.admin_panel_settings_rounded,
       label: 'Administración',
     ),
+    _NavItem(
+      icon: Icons.settings_outlined,
+      activeIcon: Icons.settings_rounded,
+      label: 'Configuración',
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = Responsive.isDesktop(context);
-    final views = _views;
+    return ListenableBuilder(
+      listenable: appState,
+      builder: (context, _) {
+        final isDesktop = Responsive.isDesktop(context);
+        final views = _views;
 
-    if (isDesktop) {
-      return _DesktopShell(
-        index: _index,
-        views: views,
-        onTap: (value) => setState(() => _index = value),
-      );
-    }
+        if (isDesktop) {
+          return _DesktopShell(
+            index: _index,
+            views: views,
+            cards: appState.userCards,
+            currentCard: appState.currentCard,
+            creatingCard: _creatingCard,
+            onTap: (value) => setState(() => _index = value),
+            onSelectCard: appState.selectCardById,
+            onCreateCard: _createCard,
+          );
+        }
 
-    return _MobileShell(
-      index: _index,
-      views: views,
-      onTap: (value) => setState(() => _index = value),
+        return _MobileShell(
+          index: _index,
+          views: views,
+          cards: appState.userCards,
+          currentCard: appState.currentCard,
+          creatingCard: _creatingCard,
+          onTap: (value) => setState(() => _index = value),
+          onSelectCard: appState.selectCardById,
+          onCreateCard: _createCard,
+        );
+      },
     );
   }
 }
@@ -119,20 +176,30 @@ class _HomeShellState extends State<HomeShell> {
 class _DesktopShell extends StatelessWidget {
   final int index;
   final List<Widget> views;
+  final List<DigitalCardModel> cards;
+  final DigitalCardModel? currentCard;
+  final bool creatingCard;
   final ValueChanged<int> onTap;
+  final ValueChanged<String> onSelectCard;
+  final Future<void> Function() onCreateCard;
 
   const _DesktopShell({
     required this.index,
     required this.views,
+    required this.cards,
+    required this.currentCard,
+    required this.creatingCard,
     required this.onTap,
+    required this.onSelectCard,
+    required this.onCreateCard,
   });
 
   @override
   Widget build(BuildContext context) {
     final user = appState.currentUser;
     final profilePhotoUrl =
-        appState.currentCard?.profilePhotoUrl?.trim().isNotEmpty == true
-        ? appState.currentCard!.profilePhotoUrl
+        currentCard?.profilePhotoUrl?.trim().isNotEmpty == true
+        ? currentCard!.profilePhotoUrl
         : user?.photoUrl;
     final jobTitle = user?.jobTitle?.trim();
 
@@ -144,7 +211,7 @@ class _DesktopShell extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 248,
+                width: 268,
                 decoration: BoxDecoration(
                   color: context.bgCard,
                   borderRadius: BorderRadius.circular(30),
@@ -210,6 +277,16 @@ class _DesktopShell extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (cards.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      _CardWorkspaceSection(
+                        cards: cards,
+                        currentCard: currentCard,
+                        creatingCard: creatingCard,
+                        onSelectCard: onSelectCard,
+                        onCreateCard: onCreateCard,
+                      ),
+                    ],
                     const SizedBox(height: 22),
                     Text(
                       'MENÚ',
@@ -288,12 +365,22 @@ class _DesktopShell extends StatelessWidget {
 class _MobileShell extends StatelessWidget {
   final int index;
   final List<Widget> views;
+  final List<DigitalCardModel> cards;
+  final DigitalCardModel? currentCard;
+  final bool creatingCard;
   final ValueChanged<int> onTap;
+  final ValueChanged<String> onSelectCard;
+  final Future<void> Function() onCreateCard;
 
   const _MobileShell({
     required this.index,
     required this.views,
+    required this.cards,
+    required this.currentCard,
+    required this.creatingCard,
     required this.onTap,
+    required this.onSelectCard,
+    required this.onCreateCard,
   });
 
   @override
@@ -313,7 +400,21 @@ class _MobileShell extends StatelessWidget {
               border: Border.all(color: context.borderStrongSoft, width: 1.5),
             ),
             clipBehavior: Clip.hardEdge,
-            child: IndexedStack(index: index, children: views),
+            child: Column(
+              children: [
+                if (cards.isNotEmpty)
+                  _MobileCardToolbar(
+                    cards: cards,
+                    currentCard: currentCard,
+                    creatingCard: creatingCard,
+                    onSelectCard: onSelectCard,
+                    onCreateCard: onCreateCard,
+                  ),
+                Expanded(
+                  child: IndexedStack(index: index, children: views),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -335,11 +436,11 @@ class _MobileShell extends StatelessWidget {
             selectedItemColor: AppColors.primary,
             unselectedItemColor: context.textSecondary,
             selectedLabelStyle: GoogleFonts.dmSans(
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
             unselectedLabelStyle: GoogleFonts.dmSans(
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
             ),
             items: _HomeShellState._navItems
@@ -353,6 +454,264 @@ class _MobileShell extends StatelessWidget {
                 .toList(),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CardWorkspaceSection extends StatelessWidget {
+  final List<DigitalCardModel> cards;
+  final DigitalCardModel? currentCard;
+  final bool creatingCard;
+  final ValueChanged<String> onSelectCard;
+  final Future<void> Function() onCreateCard;
+
+  const _CardWorkspaceSection({
+    required this.cards,
+    required this.currentCard,
+    required this.creatingCard,
+    required this.onSelectCard,
+    required this.onCreateCard,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedCard = currentCard ?? cards.first;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.bgSubtle,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TARJETA ACTIVA',
+            style: GoogleFonts.dmSans(
+              color: context.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (cards.length > 1)
+            _CardDropdown(
+              cards: cards,
+              currentCard: selectedCard,
+              onSelectCard: onSelectCard,
+            )
+          else
+            _SelectedCardSummary(card: selectedCard),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: creatingCard ? null : onCreateCard,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: creatingCard
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.add_card_rounded, size: 18),
+              label: Text(
+                'Agregar tarjeta',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileCardToolbar extends StatelessWidget {
+  final List<DigitalCardModel> cards;
+  final DigitalCardModel? currentCard;
+  final bool creatingCard;
+  final ValueChanged<String> onSelectCard;
+  final Future<void> Function() onCreateCard;
+
+  const _MobileCardToolbar({
+    required this.cards,
+    required this.currentCard,
+    required this.creatingCard,
+    required this.onSelectCard,
+    required this.onCreateCard,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedCard = currentCard ?? cards.first;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        border: Border(bottom: BorderSide(color: context.borderStrongSoft)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: cards.length > 1
+                ? _CardDropdown(
+                    cards: cards,
+                    currentCard: selectedCard,
+                    onSelectCard: onSelectCard,
+                    compact: true,
+                  )
+                : _SelectedCardSummary(card: selectedCard, compact: true),
+          ),
+          const SizedBox(width: 10),
+          IconButton.filled(
+            onPressed: creatingCard ? null : onCreateCard,
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
+            ),
+            icon: creatingCard
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.add_card_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardDropdown extends StatelessWidget {
+  final List<DigitalCardModel> cards;
+  final DigitalCardModel currentCard;
+  final ValueChanged<String> onSelectCard;
+  final bool compact;
+
+  const _CardDropdown({
+    required this.cards,
+    required this.currentCard,
+    required this.onSelectCard,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: currentCard.id,
+      isExpanded: true,
+      icon: Icon(Icons.keyboard_arrow_down, color: context.textSecondary),
+      decoration: InputDecoration(
+        isDense: true,
+        filled: true,
+        fillColor: context.bgCard,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: compact ? 10 : 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: context.borderColor),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: context.borderColor),
+        ),
+      ),
+      style: GoogleFonts.dmSans(
+        color: context.textPrimary,
+        fontSize: compact ? 12 : 13,
+        fontWeight: FontWeight.w700,
+      ),
+      items: cards.asMap().entries.map((entry) {
+        final card = entry.value;
+        return DropdownMenuItem<String>(
+          value: card.id,
+          child: Text(
+            _cardMenuLabel(card, entry.key),
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList(),
+      onChanged: (value) {
+        if (value != null) onSelectCard(value);
+      },
+    );
+  }
+}
+
+class _SelectedCardSummary extends StatelessWidget {
+  final DigitalCardModel card;
+  final bool compact;
+
+  const _SelectedCardSummary({required this.card, this.compact = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: compact ? 10 : 12,
+      ),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _cardTitle(card, 0),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.outfit(
+              color: context.textPrimary,
+              fontSize: compact ? 15 : 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '@${card.publicSlug}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.dmSans(
+              color: context.textSecondary,
+              fontSize: compact ? 11 : 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -456,4 +815,16 @@ class _NavItem {
     required this.activeIcon,
     required this.label,
   });
+}
+
+String _cardTitle(DigitalCardModel card, int index) {
+  final name = card.name.trim();
+  if (name.isNotEmpty) return name;
+  return 'Tarjeta ${index + 1}';
+}
+
+String _cardMenuLabel(DigitalCardModel card, int index) {
+  final title = _cardTitle(card, index);
+  if (card.publicSlug.trim().isEmpty) return title;
+  return '$title · @${card.publicSlug}';
 }

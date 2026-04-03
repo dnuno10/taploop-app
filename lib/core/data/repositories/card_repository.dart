@@ -13,6 +13,22 @@ class CardRepository {
 
   // ─── Fetch card with contacts & social links ─────────────────────────────
 
+  static Future<List<DigitalCardModel>> fetchCardsForUser(String userId) async {
+    final rows = await _db
+        .from('digital_cards')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at');
+
+    final cards = await Future.wait(
+      (rows as List).cast<Map<String, dynamic>>().map(
+        (row) => fetchCard(row['id'] as String),
+      ),
+    );
+
+    return cards.whereType<DigitalCardModel>().toList();
+  }
+
   static Future<DigitalCardModel?> fetchCard(String cardId) async {
     final cardFuture = _db
         .from('digital_cards')
@@ -107,27 +123,37 @@ class CardRepository {
     bool includeOrganizationLogo = true,
   }) async {
     final result = await _db.rpc(
-      'get_user_id_by_nfc_serial',
+      'get_digital_card_id_by_nfc_serial',
       params: {'p_serial': serial},
     );
-    final userId = result as String?;
-    if (userId == null || userId.isEmpty) return null;
-    return fetchByUserId(
-      userId,
-      includeOrganizationLogo: includeOrganizationLogo,
-    );
+    final cardId = (result as String?)?.trim();
+    if (cardId == null || cardId.isEmpty) return null;
+    return fetchCard(cardId);
   }
 
   // ─── Activate NFC card (link serial → current user) ──────────────────────
 
-  static Future<bool> activateNfcCard(String serial) async {
+  static Future<bool> activateNfcCard(
+    String serial,
+    String digitalCardId,
+  ) async {
     final currentUser = _db.auth.currentUser;
     if (currentUser == null) return false;
+
+    final cardRows = await _db
+        .from('digital_cards')
+        .select('id, user_id')
+        .eq('id', digitalCardId)
+        .limit(1);
+    if ((cardRows as List).isEmpty) return false;
+    final ownerId = cardRows.first['user_id'] as String?;
+    if (ownerId == null || ownerId != currentUser.id) return false;
 
     final res = await _db
         .from('nfc_cards')
         .update({
           'user_id': currentUser.id,
+          'digital_card_id': digitalCardId,
           'is_assigned': true,
           'assigned_at': DateTime.now().toIso8601String(),
         })
@@ -136,10 +162,19 @@ class CardRepository {
         .select();
 
     final activated = (res as List).isNotEmpty;
-    if (!activated) return false;
+    return activated;
+  }
 
-    await _ensureDigitalCardForUser(currentUser.id);
-    return true;
+  static Future<DigitalCardModel> ensureDigitalCardForUser(
+    String userId,
+  ) async {
+    final card = await _ensureDigitalCardForUser(userId);
+    if (card == null) {
+      throw Exception(
+        'No se pudo preparar una tarjeta digital para el usuario.',
+      );
+    }
+    return card;
   }
 
   static Future<DigitalCardModel?> _ensureDigitalCardForUser(
@@ -190,6 +225,74 @@ class CardRepository {
           'org_id': orgId,
           'name': resolvedName ?? '',
           'job_title': '',
+          'company': companyName,
+          'bio': '',
+          'public_slug': slug,
+          'is_active': true,
+          'theme_style': 'black',
+          'layout_style': 'centered',
+          'primary_color': 0xFFEF6820,
+          'bg_style': 'plain',
+        })
+        .select()
+        .single();
+
+    return _fetchWithItems(created);
+  }
+
+  static Future<DigitalCardModel> createCardForUser({
+    required String userId,
+    String? orgId,
+    String? fallbackName,
+    String? fallbackJobTitle,
+    String? fallbackCompany,
+  }) async {
+    final userRows = await _db
+        .from('users')
+        .select('name, job_title, org_id')
+        .eq('id', userId)
+        .limit(1);
+
+    final userJson = userRows.isNotEmpty
+        ? userRows.first
+        : const <String, dynamic>{};
+    final resolvedOrgId =
+        (orgId ?? userJson['org_id'] as String?)?.trim().isNotEmpty == true
+        ? (orgId ?? userJson['org_id'] as String?)!.trim()
+        : null;
+    final resolvedName =
+        (fallbackName ?? userJson['name'] as String?)?.trim().isNotEmpty == true
+        ? (fallbackName ?? userJson['name'] as String?)!.trim()
+        : 'Nueva tarjeta';
+    final resolvedJobTitle =
+        (fallbackJobTitle ?? userJson['job_title'] as String?)?.trim() ?? '';
+
+    var companyName = fallbackCompany?.trim() ?? '';
+    if (companyName.isEmpty &&
+        resolvedOrgId != null &&
+        resolvedOrgId.isNotEmpty) {
+      final orgRows = await _db
+          .from('organizations')
+          .select('name')
+          .eq('id', resolvedOrgId)
+          .limit(1);
+      if ((orgRows as List).isNotEmpty) {
+        companyName = (orgRows.first['name'] as String?)?.trim() ?? '';
+      }
+    }
+
+    final slug = _generateSlug(
+      resolvedName,
+      '$userId-${DateTime.now().microsecondsSinceEpoch}',
+    );
+
+    final created = await _db
+        .from('digital_cards')
+        .insert({
+          'user_id': userId,
+          'org_id': resolvedOrgId,
+          'name': resolvedName,
+          'job_title': resolvedJobTitle,
           'company': companyName,
           'bio': '',
           'public_slug': slug,

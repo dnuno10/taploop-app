@@ -83,8 +83,8 @@ class _OtpViewState extends State<OtpView> {
       );
       appState.setLoadingCard(true);
       appState.setUser(user);
-      final card = await AuthService.fetchUserCard(user.id);
-      appState.setCard(card);
+      final cards = await AuthService.fetchUserCards(user.id);
+      appState.setCards(cards);
       appState.setLoadingCard(false);
       if (!mounted) return;
       final pendingNfc = widget.pendingNfc;

@@ -40,8 +40,8 @@ Future<void> _hydrateAuthenticatedState() async {
   appState.setUser(user);
   appState.setLoadingCard(true);
   try {
-    final card = await AuthService.fetchUserCard(user.id);
-    appState.setCard(card);
+    final cards = await AuthService.fetchUserCards(user.id);
+    appState.setCards(cards);
   } finally {
     appState.setLoadingCard(false);
   }

@@ -16,6 +16,7 @@ import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/widgets/taploop_button.dart';
+import '../../../core/widgets/empty_data_state.dart';
 import '../../../core/widgets/taploop_text_field.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../../analytics/models/team_member_model.dart';
@@ -549,62 +550,68 @@ class _AdminViewState extends State<AdminView> {
                     ),
                     const SizedBox(height: 18),
 
-                    isDesktop
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 7,
-                                child: _AdminPerformancePanel(
+                    if (_members.isEmpty)
+                      const EmptyDataState(
+                        hint: 'Aún no hay miembros del equipo para mostrar.',
+                      )
+                    else ...[
+                      isDesktop
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 7,
+                                  child: _AdminPerformancePanel(
+                                    viewsSeries: viewsSeries,
+                                    tapsSeries: tapsSeries,
+                                    clicksSeries: clicksSeries,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  flex: 4,
+                                  child: _AdminTeamHighlights(
+                                    members: rankedMembers,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                _AdminPerformancePanel(
                                   viewsSeries: viewsSeries,
                                   tapsSeries: tapsSeries,
                                   clicksSeries: clicksSeries,
                                 ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                flex: 4,
-                                child: _AdminTeamHighlights(
-                                  members: rankedMembers,
-                                ),
-                              ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              _AdminPerformancePanel(
-                                viewsSeries: viewsSeries,
-                                tapsSeries: tapsSeries,
-                                clicksSeries: clicksSeries,
-                              ),
-                              const SizedBox(height: 16),
-                              _AdminTeamHighlights(members: rankedMembers),
-                            ],
-                          ),
-                    const SizedBox(height: 24),
+                                const SizedBox(height: 16),
+                                _AdminTeamHighlights(members: rankedMembers),
+                              ],
+                            ),
+                      const SizedBox(height: 24),
 
-                    // ─ Members list ───────────────────────────
-                    Text(
-                      'Equipo',
-                      style: GoogleFonts.outfit(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: context.textPrimary,
+                      // ─ Members list ───────────────────────────
+                      Text(
+                        'Equipo',
+                        style: GoogleFonts.outfit(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                    isDesktop
-                        ? _DesktopMemberGrid(
-                            members: _members,
-                            onEdit: _editMember,
-                            onToggle: _toggleMember,
-                          )
-                        : _MobileMembers(
-                            members: _members,
-                            onEdit: _editMember,
-                            onToggle: _toggleMember,
-                          ),
+                      isDesktop
+                          ? _DesktopMemberGrid(
+                              members: _members,
+                              onEdit: _editMember,
+                              onToggle: _toggleMember,
+                            )
+                          : _MobileMembers(
+                              members: _members,
+                              onEdit: _editMember,
+                              onToggle: _toggleMember,
+                            ),
+                    ],
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -1022,6 +1029,11 @@ class _AdminPerformancePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasData =
+        viewsSeries.any((value) => value > 0) ||
+        tapsSeries.any((value) => value > 0) ||
+        clicksSeries.any((value) => value > 0);
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -1049,26 +1061,32 @@ class _AdminPerformancePanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          _AdminTrendRow(
-            label: 'Vistas',
-            total: viewsSeries.fold(0, (a, b) => a + b),
-            series: viewsSeries,
-            color: AppColors.primary,
-          ),
-          const SizedBox(height: 12),
-          _AdminTrendRow(
-            label: 'Taps',
-            total: tapsSeries.fold(0, (a, b) => a + b),
-            series: tapsSeries,
-            color: const Color(0xFF0F9D58),
-          ),
-          const SizedBox(height: 12),
-          _AdminTrendRow(
-            label: 'Clicks en enlace',
-            total: clicksSeries.fold(0, (a, b) => a + b),
-            series: clicksSeries,
-            color: const Color(0xFFE67E22),
-          ),
+          if (!hasData)
+            const EmptyDataState(
+              hint: 'Aún no hay actividad del equipo registrada.',
+            )
+          else ...[
+            _AdminTrendRow(
+              label: 'Vistas',
+              total: viewsSeries.fold(0, (a, b) => a + b),
+              series: viewsSeries,
+              color: AppColors.primary,
+            ),
+            const SizedBox(height: 12),
+            _AdminTrendRow(
+              label: 'Taps',
+              total: tapsSeries.fold(0, (a, b) => a + b),
+              series: tapsSeries,
+              color: const Color(0xFF0F9D58),
+            ),
+            const SizedBox(height: 12),
+            _AdminTrendRow(
+              label: 'Clicks en enlace',
+              total: clicksSeries.fold(0, (a, b) => a + b),
+              series: clicksSeries,
+              color: const Color(0xFFE67E22),
+            ),
+          ],
         ],
       ),
     );

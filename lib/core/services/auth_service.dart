@@ -1,8 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/auth/models/user_model.dart';
 import '../../features/card/models/digital_card_model.dart';
-import '../../features/card/models/contact_item_model.dart';
-import '../../features/card/models/social_link_model.dart';
 import '../data/repositories/card_repository.dart';
 import '../services/supabase_service.dart';
 
@@ -155,40 +153,30 @@ class AuthService {
     await _db.auth.updateUser(UserAttributes(password: newPassword));
   }
 
+  static Future<void> changePasswordWithCurrent({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final currentUser = _db.auth.currentUser;
+    final email = currentUser?.email?.trim();
+    if (currentUser == null || email == null || email.isEmpty) {
+      throw Exception('No se encontró una sesión activa.');
+    }
+
+    await _db.auth.signInWithPassword(email: email, password: currentPassword);
+    await _db.auth.updateUser(UserAttributes(password: newPassword));
+  }
+
   // ─── Fetch card for a user ─────────────────────────────────────────────────
 
+  static Future<List<DigitalCardModel>> fetchUserCards(String userId) {
+    return CardRepository.fetchCardsForUser(userId);
+  }
+
   static Future<DigitalCardModel?> fetchUserCard(String userId) async {
-    final rows = await SupabaseService.client
-        .from('digital_cards')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at')
-        .limit(1);
-    if (rows.isEmpty) return null;
-    final cardJson = rows.first;
-    final cardId = cardJson['id'] as String;
-
-    final contacts = await SupabaseService.client
-        .from('contact_items')
-        .select()
-        .eq('card_id', cardId)
-        .order('sort_order');
-
-    final socials = await SupabaseService.client
-        .from('social_links')
-        .select()
-        .eq('card_id', cardId)
-        .order('sort_order');
-
-    return CardRepository.buildCardModel(
-      cardJson,
-      contactItems: (contacts as List)
-          .map((e) => ContactItemModel.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      socialLinks: (socials as List)
-          .map((e) => SocialLinkModel.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
+    final cards = await fetchUserCards(userId);
+    if (cards.isEmpty) return null;
+    return cards.first;
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────

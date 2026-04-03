@@ -11,6 +11,7 @@ import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/data/repositories/lead_repository.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/utils/visitor_info.dart';
 import '../../../core/widgets/remote_brand_logo.dart';
 import '../../../core/widgets/platform_icon.dart';
@@ -175,9 +176,28 @@ class _PublicCardViewState extends State<PublicCardView> {
       _activationError = null;
     });
     try {
-      final ok = await CardRepository.activateNfcCard(widget.nfcSerial!);
+      final targetCard = await _resolveTargetCardForActivation();
+      if (targetCard == null) {
+        setState(() {
+          _activationError =
+              'No se encontró una tarjeta digital para vincular este NFC.';
+          _activating = false;
+        });
+        return;
+      }
+
+      final ok = await CardRepository.activateNfcCard(
+        widget.nfcSerial!,
+        targetCard.id,
+      );
       if (!mounted) return;
       if (ok) {
+        final user = appState.currentUser;
+        if (user != null) {
+          final cards = await AuthService.fetchUserCards(user.id);
+          if (!mounted) return;
+          appState.setCards(cards, selectedCardId: targetCard.id);
+        }
         // Activación exitosa — ir al dashboard
         context.go('/');
       } else {
@@ -194,6 +214,24 @@ class _PublicCardViewState extends State<PublicCardView> {
         });
       }
     }
+  }
+
+  Future<DigitalCardModel?> _resolveTargetCardForActivation() async {
+    final selectedCard = appState.currentCard;
+    if (selectedCard != null) return selectedCard;
+
+    if (appState.userCards.isNotEmpty) {
+      final fallback = appState.userCards.first;
+      appState.selectCardById(fallback.id);
+      return fallback;
+    }
+
+    final user = appState.currentUser;
+    if (user == null) return null;
+    final createdCard = await CardRepository.ensureDigitalCardForUser(user.id);
+    if (!mounted) return null;
+    appState.addCard(createdCard);
+    return createdCard;
   }
 
   @override
