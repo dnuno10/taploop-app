@@ -10,6 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
+import '../../../core/utils/storage_upload_error.dart';
 import '../../../core/utils/field_validators.dart';
 import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/card_repository.dart';
@@ -1584,11 +1585,15 @@ class _AvatarPickerState extends State<_AvatarPicker> {
           TapLoopToastType.success,
         );
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         TapLoopToast.show(
           context,
-          'No se pudo subir la imagen. Intenta de nuevo.',
+          friendlyStorageUploadError(
+            error,
+            assetLabel: 'la imagen',
+            bucket: 'avatars',
+          ),
           TapLoopToastType.warning,
         );
       }

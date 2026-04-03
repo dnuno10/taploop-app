@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
+import '../../../core/utils/storage_upload_error.dart';
 import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/admin_repository.dart';
 import '../../../core/data/repositories/card_repository.dart';
@@ -819,11 +820,15 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
           TapLoopToastType.success,
         );
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         TapLoopToast.show(
           context,
-          'No se pudo subir el logo. Intenta de nuevo.',
+          friendlyStorageUploadError(
+            error,
+            assetLabel: 'el logo',
+            bucket: 'company-logos',
+          ),
           TapLoopToastType.warning,
         );
       }
