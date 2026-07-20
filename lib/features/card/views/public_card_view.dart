@@ -644,11 +644,6 @@ class _SaveContactButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground =
-        ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
-        ? Colors.white
-        : const Color(0xFF111827);
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
       child: Center(
@@ -662,7 +657,7 @@ class _SaveContactButton extends StatelessWidget {
               label: const Text('Guardar contacto'),
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
-                foregroundColor: foreground,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),

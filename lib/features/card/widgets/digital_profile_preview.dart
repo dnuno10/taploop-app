@@ -144,6 +144,44 @@ class _ScreenContent extends StatelessWidget {
         child: Column(
           children: [
             _buildHeaderBand(headerPadding, isCentered),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                12 * scale,
+                4 * scale,
+                12 * scale,
+                0,
+              ),
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(
+                  horizontal: 12 * scale,
+                  vertical: 10 * scale,
+                ),
+                decoration: BoxDecoration(
+                  color: _accentColor,
+                  borderRadius: BorderRadius.circular(10 * scale),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.person_add_alt_1_outlined,
+                      size: 11 * scale,
+                      color: Colors.white,
+                    ),
+                    SizedBox(width: 6 * scale),
+                    Text(
+                      'Guardar contacto',
+                      style: GoogleFonts.outfit(
+                        fontSize: 9 * scale,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             // Contact items
             if (visibleContacts.isNotEmpty) ...[
               Padding(
