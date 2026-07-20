@@ -20,6 +20,8 @@ import '../models/contact_item_model.dart';
 import '../models/social_link_model.dart';
 import '../models/smart_form_model.dart';
 import '../utils/calendar_links.dart';
+import '../utils/vcard_download_stub.dart'
+    if (dart.library.html) '../utils/vcard_download_web.dart';
 
 // ─── NFC serial state ─────────────────────────────────────────────────────────
 enum _NfcState { loading, showCard, unassigned, notFound }
@@ -435,6 +437,14 @@ class _CardPage extends StatelessWidget {
     final scrollView = CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildCardHeader(card)),
+        SliverToBoxAdapter(
+          child: _SaveContactButton(
+            card: card,
+            contacts: visibleContacts,
+            accent: accent,
+            campaignId: campaignId,
+          ),
+        ),
         if (visibleContacts.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: _SectionHeader(title: 'Contacto', textColor: textCol),
@@ -511,6 +521,160 @@ class _CardPage extends StatelessWidget {
       body: Container(
         decoration: _buildPageDecoration(card),
         child: scrollView,
+      ),
+    );
+  }
+}
+
+// ─── Save Contact Button ─────────────────────────────────────────────────────
+
+class _SaveContactButton extends StatelessWidget {
+  final DigitalCardModel card;
+  final List<ContactItemModel> contacts;
+  final Color accent;
+  final String? campaignId;
+
+  const _SaveContactButton({
+    required this.card,
+    required this.contacts,
+    required this.accent,
+    this.campaignId,
+  });
+
+  Future<void> _downloadVCard() async {
+    final vcard = _buildVCard(card, contacts);
+    final fileName = '${_safeFileName(card.name)}.vcf';
+    final downloaded = await downloadVCardFile(fileName, vcard);
+    if (downloaded) {
+      unawaited(
+        AnalyticsRepository.recordInteraction(
+          cardId: card.id,
+          source: 'downloaded_contact',
+          campaignId: campaignId,
+        ),
+      );
+    }
+  }
+
+  static String _buildVCard(
+    DigitalCardModel card,
+    List<ContactItemModel> contacts,
+  ) {
+    final lines = <String>[
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'FN:${_escapeVCard(card.name)}',
+    ];
+
+    final nameParts = card.name.trim().split(RegExp(r'\s+'));
+    if (nameParts.isNotEmpty && nameParts.first.isNotEmpty) {
+      final firstName = nameParts.first;
+      final lastName = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : '';
+      lines.add('N:${_escapeVCard(lastName)};${_escapeVCard(firstName)};;;');
+    }
+    if (card.company.trim().isNotEmpty) {
+      lines.add('ORG:${_escapeVCard(card.company.trim())}');
+    }
+    if (card.jobTitle.trim().isNotEmpty) {
+      lines.add('TITLE:${_escapeVCard(card.jobTitle.trim())}');
+    }
+    if (card.bio?.trim().isNotEmpty == true) {
+      lines.add('NOTE:${_escapeVCard(card.bio!.trim())}');
+    }
+    if (card.profilePhotoUrl?.trim().isNotEmpty == true) {
+      lines.add(
+        'PHOTO;VALUE=URI:${_escapeVCard(card.profilePhotoUrl!.trim())}',
+      );
+    }
+    if (card.companyLogoUrl?.trim().isNotEmpty == true) {
+      lines.add('LOGO;VALUE=URI:${_escapeVCard(card.companyLogoUrl!.trim())}');
+    }
+
+    for (final item in contacts) {
+      final value = item.value.trim();
+      if (value.isEmpty) continue;
+      switch (item.type) {
+        case ContactType.phone:
+          lines.add('TEL;TYPE=CELL:${_escapeVCard(value)}');
+          break;
+        case ContactType.whatsapp:
+          lines.add('TEL;TYPE=CELL;TYPE=VOICE:${_escapeVCard(value)}');
+          lines.add(
+            'URL;TYPE=WhatsApp:${_escapeVCard('https://wa.me/${value.replaceAll(RegExp(r'\D'), '')}')}',
+          );
+          break;
+        case ContactType.email:
+          lines.add('EMAIL;TYPE=INTERNET:${_escapeVCard(value)}');
+          break;
+        case ContactType.address:
+          lines.add('ADR;TYPE=WORK:;;${_escapeVCard(value)};;;;');
+          break;
+        case ContactType.website:
+          final url = value.startsWith('http') ? value : 'https://$value';
+          lines.add('URL:${_escapeVCard(url)}');
+          break;
+      }
+    }
+
+    lines
+      ..add('URL:${_escapeVCard(card.publicUrl)}')
+      ..add('END:VCARD');
+    return '${lines.join('\r\n')}\r\n';
+  }
+
+  static String _escapeVCard(String value) {
+    return value
+        .replaceAll('\\', r'\\')
+        .replaceAll(';', r'\;')
+        .replaceAll(',', r'\,')
+        .replaceAll('\r\n', r'\n')
+        .replaceAll('\n', r'\n');
+  }
+
+  static String _safeFileName(String value) {
+    final normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    return normalized.isEmpty ? 'contacto-taploop' : normalized;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground =
+        ThemeData.estimateBrightnessForColor(accent) == Brightness.dark
+        ? Colors.white
+        : const Color(0xFF111827);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _downloadVCard,
+              icon: const Icon(Icons.person_add_alt_1_outlined, size: 20),
+              label: const Text('Guardar contacto'),
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: foreground,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: GoogleFonts.dmSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

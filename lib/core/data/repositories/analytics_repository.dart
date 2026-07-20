@@ -182,7 +182,7 @@ class AnalyticsRepository {
 
   // ─── Record an interaction (contact tap / social tap / form fill) ─────────
 
-  /// source: 'contact' | 'social' | 'form'
+  /// source: 'contact' | 'social' | 'form' | 'downloaded_contact'
   /// label: displayLabel / platform name / form title
   static Future<void> recordInteraction({
     required String cardId,
@@ -456,6 +456,7 @@ class AnalyticsRepository {
       'contact' => 'Contacto',
       'social' => 'Red social',
       'form' => 'Formulario',
+      'downloaded_contact' => 'Guardó contacto',
       'link' => 'Abrió perfil',
       _ => '',
     };

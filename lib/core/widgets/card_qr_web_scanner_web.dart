@@ -2,7 +2,8 @@
 
 import 'dart:async';
 import 'dart:html' as html;
-import 'dart:js_util' as js_util;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/widgets.dart';
@@ -75,9 +76,8 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
 
   Future<void> _initScanner() async {
     try {
-      final barcodeDetectorCtor = js_util.getProperty<Object?>(
-        html.window,
-        'BarcodeDetector',
+      final barcodeDetectorCtor = globalContext.getProperty<JSFunction?>(
+        'BarcodeDetector'.toJS,
       );
       if (barcodeDetectorCtor == null) {
         final jsQrLoaded = await _ensureJsQrLoaded();
@@ -89,10 +89,7 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
         }
         _useJsQrFallback = true;
       } else {
-        _barcodeDetector = js_util.callConstructor(
-          barcodeDetectorCtor,
-          <Object?>[],
-        );
+        _barcodeDetector = barcodeDetectorCtor.callAsConstructor<JSObject>();
       }
 
       final mediaDevices = html.window.navigator.mediaDevices;
@@ -162,13 +159,13 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
       throw StateError('BarcodeDetector no disponible');
     }
 
-    final result = await js_util.promiseToFuture<Object?>(
-      js_util.callMethod<Object?>(_barcodeDetector as Object, 'detect', [
-            _videoElement,
-          ])
-          as Object,
-    );
-    final decoded = js_util.dartify(result);
+    final result = await (_barcodeDetector as JSObject)
+        .callMethod<JSPromise<JSAny?>>(
+          'detect'.toJS,
+          JSObject.fromInteropObject(_videoElement),
+        )
+        .toDart;
+    final decoded = result?.dartify();
     if (decoded is! List || decoded.isEmpty) return;
 
     for (final item in decoded) {
@@ -182,7 +179,7 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
   }
 
   void _scanWithJsQr() {
-    final jsQr = js_util.getProperty<Object?>(html.window, 'jsQR');
+    final jsQr = globalContext.getProperty<JSFunction?>('jsQR'.toJS);
     if (jsQr == null) {
       throw StateError('jsQR no disponible');
     }
@@ -203,18 +200,19 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
     );
 
     final imageData = _canvasContext.getImageData(0, 0, width, height);
-    final result = js_util.callMethod<Object?>(html.window, 'jsQR', [
-      imageData.data,
-      width,
-      height,
-      js_util.jsify({'inversionAttempts': 'dontInvert'}),
-    ]);
+    final result = jsQr.callAsFunction(
+      globalContext,
+      JSObject.fromInteropObject(imageData.data),
+      width.toJS,
+      height.toJS,
+      {'inversionAttempts': 'dontInvert'}.jsify(),
+    );
     if (result == null) return;
 
-    final rawValue = js_util.getProperty<Object?>(result, 'data');
-    if (rawValue is! String) return;
+    final rawValue = (result as JSObject).getProperty<JSString?>('data'.toJS);
+    if (rawValue == null) return;
 
-    final trimmed = rawValue.trim();
+    final trimmed = rawValue.toDart.trim();
     if (trimmed.isEmpty) return;
     _handleDetected(trimmed);
   }
@@ -226,7 +224,7 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
   }
 
   Future<bool> _ensureJsQrLoaded() {
-    final existing = js_util.getProperty<Object?>(html.window, 'jsQR');
+    final existing = globalContext.getProperty<JSFunction?>('jsQR'.toJS);
     if (existing != null) return Future.value(true);
     final pending = _jsQrLoadFuture;
     if (pending != null) return pending;
@@ -239,7 +237,7 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
         if (!completer.isCompleted) completer.complete(false);
         return;
       }
-      if (js_util.getProperty<Object?>(html.window, 'jsQR') != null) {
+      if (globalContext.getProperty<JSFunction?>('jsQR'.toJS) != null) {
         if (!completer.isCompleted) completer.complete(true);
         return;
       }
@@ -259,7 +257,7 @@ class _CardQrWebScannerState extends State<CardQrWebScanner> {
         loadSub.cancel();
         errorSub.cancel();
         final loaded =
-            js_util.getProperty<Object?>(html.window, 'jsQR') != null;
+            globalContext.getProperty<JSFunction?>('jsQR'.toJS) != null;
         if (!completer.isCompleted) {
           completer.complete(loaded);
         }

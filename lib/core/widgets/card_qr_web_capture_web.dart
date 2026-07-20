@@ -2,12 +2,12 @@
 
 import 'dart:async';
 import 'dart:html' as html;
-import 'dart:js_util' as js_util;
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 Future<String?> captureQrCodeFromCameraOrImage() async {
-  final barcodeDetectorCtor = js_util.getProperty<Object?>(
-    html.window,
-    'BarcodeDetector',
+  final barcodeDetectorCtor = globalContext.getProperty<JSFunction?>(
+    'BarcodeDetector'.toJS,
   );
   if (barcodeDetectorCtor == null) return null;
 
@@ -40,13 +40,15 @@ Future<String?> captureQrCodeFromCameraOrImage() async {
       final image = html.ImageElement(src: imageSrc);
       await image.onLoad.first.timeout(const Duration(seconds: 10));
 
-      final detector =
-          js_util.callConstructor(barcodeDetectorCtor, <Object?>[]) as Object;
-      final detectionResult = await js_util.promiseToFuture<Object?>(
-        js_util.callMethod<Object?>(detector, 'detect', [image]) as Object,
-      );
+      final detector = barcodeDetectorCtor.callAsConstructor<JSObject>();
+      final detectionResult = await detector
+          .callMethod<JSPromise<JSAny?>>(
+            'detect'.toJS,
+            JSObject.fromInteropObject(image),
+          )
+          .toDart;
 
-      final decoded = js_util.dartify(detectionResult);
+      final decoded = detectionResult?.dartify();
       if (decoded is! List || decoded.isEmpty) {
         completer.complete(null);
         return;

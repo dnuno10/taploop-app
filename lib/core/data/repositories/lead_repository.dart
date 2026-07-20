@@ -402,6 +402,14 @@ class LeadRepository {
       );
     }
 
+    if (source == 'downloaded_contact') {
+      return LeadActionEvent(
+        action: LeadAction.downloadedContact,
+        timestamp: e.timestamp,
+        customLabel: label?.isNotEmpty == true ? label : 'Guardó contacto',
+      );
+    }
+
     if (source == 'contact' || source == 'social' || source == 'link') {
       final lower = (label ?? '').toLowerCase();
       if (lower.contains('whatsapp')) {
