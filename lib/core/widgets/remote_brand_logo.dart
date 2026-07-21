@@ -37,6 +37,8 @@ class RemoteBrandLogo extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      filterQuality: FilterQuality.high,
+      isAntiAlias: true,
       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
     );
   }

@@ -843,8 +843,6 @@ class _PublicProfileAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final cleanedUrl = imageUrl?.trim();
     final hasImage = cleanedUrl != null && cleanedUrl.isNotEmpty;
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final targetWidth = (size * devicePixelRatio * 2).round();
 
     return Container(
       width: size,
@@ -861,7 +859,6 @@ class _PublicProfileAvatar extends StatelessWidget {
               fit: BoxFit.cover,
               width: size,
               height: size,
-              cacheWidth: targetWidth,
               filterQuality: FilterQuality.high,
               isAntiAlias: true,
               errorBuilder: (_, __, ___) => _AvatarInitials(

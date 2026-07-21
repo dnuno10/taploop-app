@@ -734,19 +734,19 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
     if (orgId == null || orgId.isEmpty) return;
 
     final input = html.FileUploadInputElement()
-      ..accept = 'image/jpeg,image/png';
+      ..accept = 'image/jpeg,image/png,image/svg+xml';
     input.click();
     await input.onChange.first;
     final file = input.files?.first;
     if (file == null) return;
 
     // Validar tipo de archivo
-    const tiposPermitidos = ['image/jpeg', 'image/png'];
+    const tiposPermitidos = ['image/jpeg', 'image/png', 'image/svg+xml'];
     if (!tiposPermitidos.contains(file.type)) {
       if (mounted) {
         TapLoopToast.show(
           context,
-          'Solo se permiten imágenes en formato JPG o PNG.',
+          'Solo se permiten imágenes en formato JPG, PNG o SVG.',
           TapLoopToastType.error,
         );
       }
@@ -770,7 +770,11 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
       await reader.onLoad.first;
       final bytes = reader.result as Uint8List;
 
-      final ext = file.type == 'image/png' ? 'png' : 'jpg';
+      final ext = switch (file.type) {
+        'image/png' => 'png',
+        'image/svg+xml' => 'svg',
+        _ => 'jpg',
+      };
       final path = '$orgId/logo_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
       await SupabaseService.client.storage
