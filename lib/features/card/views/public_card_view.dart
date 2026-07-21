@@ -681,14 +681,6 @@ class _HeroHeader extends StatelessWidget {
   final DigitalCardModel card;
   const _HeroHeader({required this.card});
 
-  String _initials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name.isNotEmpty ? name[0].toUpperCase() : '?';
-  }
-
   @override
   Widget build(BuildContext context) {
     final accent = _cardAccent(card);
@@ -723,33 +715,12 @@ class _HeroHeader extends StatelessWidget {
                       ),
                     ),
                   // Avatar del usuario
-                  Container(
-                    width: 104,
-                    height: 104,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: accent.withValues(alpha: 0.2),
-                      border: Border.all(color: accent, width: 2.5),
-                    ),
-                    child: ClipOval(
-                      child: card.profilePhotoUrl != null
-                          ? Image.network(
-                              card.profilePhotoUrl!,
-                              fit: BoxFit.cover,
-                              width: 104,
-                              height: 104,
-                            )
-                          : Center(
-                              child: Text(
-                                _initials(card.name),
-                                style: GoogleFonts.outfit(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.w800,
-                                  color: accent,
-                                ),
-                              ),
-                            ),
-                    ),
+                  _PublicProfileAvatar(
+                    name: card.name,
+                    imageUrl: card.profilePhotoUrl,
+                    size: 112,
+                    borderWidth: 2.5,
+                    accent: accent,
                   ),
                   const SizedBox(height: 20),
                   // Nombre
@@ -845,17 +816,100 @@ class _PublicCompanyLogo extends StatelessWidget {
   }
 }
 
+class _PublicProfileAvatar extends StatelessWidget {
+  final String name;
+  final String? imageUrl;
+  final double size;
+  final double borderWidth;
+  final Color accent;
+
+  const _PublicProfileAvatar({
+    required this.name,
+    required this.imageUrl,
+    required this.size,
+    required this.borderWidth,
+    required this.accent,
+  });
+
+  String _initials(String value) {
+    final parts = value.trim().split(RegExp(r'\s+'));
+    if (parts.length >= 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return value.trim().isNotEmpty ? value.trim()[0].toUpperCase() : '?';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanedUrl = imageUrl?.trim();
+    final hasImage = cleanedUrl != null && cleanedUrl.isNotEmpty;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final targetWidth = (size * devicePixelRatio * 2).round();
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: accent.withValues(alpha: 0.2),
+        border: Border.all(color: accent, width: borderWidth),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasImage
+          ? Image.network(
+              cleanedUrl,
+              fit: BoxFit.cover,
+              width: size,
+              height: size,
+              cacheWidth: targetWidth,
+              filterQuality: FilterQuality.high,
+              isAntiAlias: true,
+              errorBuilder: (_, __, ___) => _AvatarInitials(
+                initials: _initials(name),
+                fontSize: size * 0.35,
+                accent: accent,
+              ),
+            )
+          : _AvatarInitials(
+              initials: _initials(name),
+              fontSize: size * 0.35,
+              accent: accent,
+            ),
+    );
+  }
+}
+
+class _AvatarInitials extends StatelessWidget {
+  final String initials;
+  final double fontSize;
+  final Color accent;
+
+  const _AvatarInitials({
+    required this.initials,
+    required this.fontSize,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        initials,
+        style: GoogleFonts.outfit(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          color: accent,
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Banner Header ────────────────────────────────────────────────────────────
 
 class _BannerHeader extends StatelessWidget {
   final DigitalCardModel card;
   const _BannerHeader({required this.card});
-
-  String _initials(String name) {
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    return name.isNotEmpty ? name[0].toUpperCase() : '?';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -892,33 +946,12 @@ class _BannerHeader extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       // Avatar del usuario (izquierda)
-                      Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: accent.withValues(alpha: 0.2),
-                          border: Border.all(color: accent, width: 2.5),
-                        ),
-                        child: ClipOval(
-                          child: card.profilePhotoUrl != null
-                              ? Image.network(
-                                  card.profilePhotoUrl!,
-                                  fit: BoxFit.cover,
-                                  width: 80,
-                                  height: 80,
-                                )
-                              : Center(
-                                  child: Text(
-                                    _initials(card.name),
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.w800,
-                                      color: accent,
-                                    ),
-                                  ),
-                                ),
-                        ),
+                      _PublicProfileAvatar(
+                        name: card.name,
+                        imageUrl: card.profilePhotoUrl,
+                        size: 84,
+                        borderWidth: 2.5,
+                        accent: accent,
                       ),
                       const SizedBox(width: 16),
                       // Datos (derecha)
@@ -1179,9 +1212,7 @@ class _SocialSection extends StatelessWidget {
   }
 
   Future<void> _openUrl(SocialLinkModel link) async {
-    final uri = Uri.parse(
-      link.url.startsWith('http') ? link.url : 'https://${link.url}',
-    );
+    final uri = Uri.parse(_normalizeSocialUrl(link));
     final launchFuture = _launchFromTap(uri);
     unawaited(
       AnalyticsRepository.recordInteraction(
@@ -1194,6 +1225,36 @@ class _SocialSection extends StatelessWidget {
     await launchFuture;
   }
 
+  String _normalizeSocialUrl(SocialLinkModel link) {
+    final raw = link.url.trim();
+    if (raw.isEmpty) return raw;
+    if (link.platform == SocialPlatform.instagram) {
+      return _normalizeInstagramUrl(raw);
+    }
+    return raw.startsWith(RegExp(r'https?://')) ? raw : 'https://$raw';
+  }
+
+  String _normalizeInstagramUrl(String raw) {
+    final value = raw.trim();
+    if (value.startsWith(RegExp(r'https?://'))) return value;
+
+    if (value.startsWith('instagram://')) return value;
+
+    if (value.startsWith('@')) {
+      return 'https://www.instagram.com/${value.substring(1)}';
+    }
+
+    if (value.startsWith('www.instagram.com/') ||
+        value.startsWith('instagram.com/')) {
+      return value.startsWith('www.') ? 'https://$value' : 'https://www.$value';
+    }
+
+    final normalizedHandle = value
+        .replaceFirst(RegExp(r'^/+'), '')
+        .replaceFirst(RegExp(r'^@+'), '');
+    return 'https://www.instagram.com/$normalizedHandle';
+  }
+
   String _shortHandle(String url) {
     try {
       final uri = Uri.parse(url);
@@ -1203,6 +1264,7 @@ class _SocialSection extends StatelessWidget {
         return handle.startsWith('@') ? handle : '@$handle';
       }
     } catch (_) {}
+    if (url.trim().startsWith('@')) return url.trim();
     return url;
   }
 
