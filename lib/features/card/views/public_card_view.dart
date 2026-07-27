@@ -13,7 +13,7 @@ import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/data/repositories/lead_repository.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/utils/visitor_info.dart';
-import '../../../core/widgets/remote_brand_logo.dart';
+import '../../../core/widgets/native_web_image.dart';
 import '../../../core/widgets/platform_icon.dart';
 import '../models/digital_card_model.dart';
 import '../models/contact_item_model.dart';
@@ -812,7 +812,7 @@ class _PublicCompanyLogo extends StatelessWidget {
           child: SizedBox(
             width: maxWidth,
             height: height,
-            child: RemoteBrandLogo(
+            child: NativeWebImage(
               imageUrl: imageUrl,
               width: maxWidth,
               height: height,
@@ -871,19 +871,12 @@ class _PublicProfileAvatar extends StatelessWidget {
             accent: accent,
           ),
           if (hasImage)
-            Image.network(
-              cleanedUrl,
+            NativeWebImage(
+              imageUrl: cleanedUrl,
               fit: BoxFit.cover,
               width: size,
               height: size,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.high,
-              isAntiAlias: true,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return const SizedBox.shrink();
-              },
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              shape: BoxShape.circle,
             ),
         ],
       ),
