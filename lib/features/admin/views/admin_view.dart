@@ -11,6 +11,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/utils/storage_upload_error.dart';
+import '../../../core/utils/web_image_optimizer.dart';
 import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/admin_repository.dart';
 import '../../../core/data/repositories/card_repository.dart';
@@ -765,16 +766,27 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
 
     setState(() => _uploading = true);
     try {
-      final reader = html.FileReader();
-      reader.readAsArrayBuffer(file);
-      await reader.onLoad.first;
-      final bytes = reader.result as Uint8List;
-
-      final ext = switch (file.type) {
-        'image/png' => 'png',
-        'image/svg+xml' => 'svg',
-        _ => 'jpg',
-      };
+      late final Uint8List bytes;
+      late final String contentType;
+      late final String ext;
+      if (file.type == 'image/svg+xml') {
+        final reader = html.FileReader();
+        reader.readAsArrayBuffer(file);
+        await reader.onLoad.first;
+        bytes = reader.result as Uint8List;
+        contentType = file.type;
+        ext = 'svg';
+      } else {
+        final optimized = await optimizeWebRasterImage(
+          file,
+          maxDimension: 1200,
+          outputType: 'image/png',
+          flattenToWhite: false,
+        );
+        bytes = optimized.bytes;
+        contentType = optimized.contentType;
+        ext = optimized.extension;
+      }
       final path = '$orgId/logo_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
       await SupabaseService.client.storage
@@ -782,7 +794,7 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
           .uploadBinary(
             path,
             bytes,
-            fileOptions: FileOptions(upsert: true, contentType: file.type),
+            fileOptions: FileOptions(upsert: true, contentType: contentType),
           );
 
       final updatedLogoUrl =

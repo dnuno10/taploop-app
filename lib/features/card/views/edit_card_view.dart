@@ -11,6 +11,7 @@ import '../../../core/services/supabase_service.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/utils/storage_upload_error.dart';
+import '../../../core/utils/web_image_optimizer.dart';
 import '../../../core/utils/field_validators.dart';
 import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/card_repository.dart';
@@ -1554,30 +1555,35 @@ class _AvatarPickerState extends State<_AvatarPicker> {
 
     setState(() => _uploading = true);
     try {
-      final reader = html.FileReader();
-      reader.readAsArrayBuffer(file);
-      await reader.onLoad.first;
-      final bytes = reader.result as Uint8List;
+      final optimized = await optimizeWebRasterImage(
+        file,
+        maxDimension: 720,
+        outputType: 'image/jpeg',
+        quality: 0.88,
+        flattenToWhite: true,
+      );
 
       final userId = widget.card.userId ?? 'unknown';
       final cardId = widget.card.id;
-      final ext = file.type == 'image/png' ? 'png' : 'jpg';
-      final path = '$userId/$cardId/profile.$ext';
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final path = '$userId/$cardId/profile_$timestamp.${optimized.extension}';
 
       await SupabaseService.client.storage
           .from('avatars')
           .uploadBinary(
             path,
-            bytes,
-            fileOptions: FileOptions(upsert: true, contentType: file.type),
+            optimized.bytes,
+            fileOptions: FileOptions(
+              upsert: true,
+              contentType: optimized.contentType,
+            ),
           );
 
       final rawUrl = SupabaseService.client.storage
           .from('avatars')
           .getPublicUrl(path);
-      final url = '$rawUrl?t=${DateTime.now().millisecondsSinceEpoch}';
 
-      widget.onPhotoChanged(url);
+      widget.onPhotoChanged(rawUrl);
       if (mounted) {
         TapLoopToast.show(
           context,

@@ -802,14 +802,23 @@ class _PublicCompanyLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: SizedBox(
-        width: maxWidth,
-        height: height,
-        child: RemoteBrandLogo(
-          imageUrl: imageUrl,
-          width: maxWidth,
-          height: height,
-          fit: BoxFit.contain,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: SizedBox(
+            width: maxWidth,
+            height: height,
+            child: RemoteBrandLogo(
+              imageUrl: imageUrl,
+              width: maxWidth,
+              height: height,
+              fit: BoxFit.contain,
+            ),
+          ),
         ),
       ),
     );
@@ -853,25 +862,31 @@ class _PublicProfileAvatar extends StatelessWidget {
         border: Border.all(color: accent, width: borderWidth),
       ),
       clipBehavior: Clip.antiAlias,
-      child: hasImage
-          ? Image.network(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _AvatarInitials(
+            initials: _initials(name),
+            fontSize: size * 0.35,
+            accent: accent,
+          ),
+          if (hasImage)
+            Image.network(
               cleanedUrl,
               fit: BoxFit.cover,
               width: size,
               height: size,
+              gaplessPlayback: true,
               filterQuality: FilterQuality.high,
               isAntiAlias: true,
-              errorBuilder: (_, __, ___) => _AvatarInitials(
-                initials: _initials(name),
-                fontSize: size * 0.35,
-                accent: accent,
-              ),
-            )
-          : _AvatarInitials(
-              initials: _initials(name),
-              fontSize: size * 0.35,
-              accent: accent,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const SizedBox.shrink();
+              },
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
             ),
+        ],
+      ),
     );
   }
 }
