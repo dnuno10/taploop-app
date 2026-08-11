@@ -707,12 +707,12 @@ class _SaveContactButton extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 20),
+                padding: const EdgeInsets.symmetric(vertical: 18),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
                 ),
                 textStyle: GoogleFonts.dmSans(
-                  fontSize: 20,
+                  fontSize: 19,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -777,7 +777,7 @@ class _ModernActionButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasEmail = _emailContact != null;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -832,15 +832,15 @@ class _ModernSecondaryButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: const Color(0xFFE5E7EB), width: 1.4),
+            border: Border.all(color: const Color(0xFFE5E7EB), width: 1.2),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 22, color: onTap == null ? Colors.grey : accent),
+              Icon(icon, size: 21, color: onTap == null ? Colors.grey : accent),
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
@@ -849,7 +849,7 @@ class _ModernSecondaryButton extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
-                    fontSize: 20,
+                    fontSize: 19,
                     height: 1.05,
                     fontWeight: FontWeight.w800,
                     color: onTap == null
@@ -1223,8 +1223,8 @@ class _ContactSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(modern ? 999 : 16),
                       child: Container(
                         padding: EdgeInsets.symmetric(
-                          horizontal: modern ? 26 : 14,
-                          vertical: modern ? 20 : 12,
+                          horizontal: modern ? 24 : 14,
+                          vertical: modern ? 18 : 11,
                         ),
                         decoration: BoxDecoration(
                           color: tileBg,
@@ -1233,14 +1233,14 @@ class _ContactSection extends StatelessWidget {
                           ),
                           border: Border.all(
                             color: tileBorder,
-                            width: modern ? 1.4 : 1.2,
+                            width: modern ? 1.2 : 1.1,
                           ),
                         ),
                         child: Row(
                           children: [
                             PlatformIcon.contact(
                               contactType: item.type,
-                              size: modern ? 25 : 22,
+                              size: modern ? 24 : 22,
                               framed: !modern,
                               color: modern ? const Color(0xFF2F5BFF) : null,
                             ),
@@ -1290,7 +1290,7 @@ class _ContactSection extends StatelessWidget {
                               modern
                                   ? Icons.arrow_forward_rounded
                                   : Icons.chevron_right_rounded,
-                              size: modern ? 30 : 22,
+                              size: modern ? 28 : 22,
                               color: modern
                                   ? const Color(0xFF0D0D0D)
                                   : const Color(0xFF9CA3AF),
@@ -1319,7 +1319,7 @@ class _ModernSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 28, 14, 12),
+        padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SizedBox(
@@ -1366,14 +1366,14 @@ class _ModernSocialCircles extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SizedBox(
             width: double.infinity,
             child: Wrap(
               alignment: WrapAlignment.start,
-              spacing: 12,
+              spacing: 14,
               runSpacing: 10,
               children: [
                 for (final link in links.take(6))
@@ -1384,8 +1384,8 @@ class _ModernSocialCircles extends StatelessWidget {
                       customBorder: const CircleBorder(),
                       onTap: () => _openUrl(link),
                       child: Container(
-                        width: 48,
-                        height: 48,
+                        width: 56,
+                        height: 56,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
@@ -1397,7 +1397,7 @@ class _ModernSocialCircles extends StatelessWidget {
                           child: PlatformIcon.social(
                             platform: link.platform,
                             framed: false,
-                            size: 25,
+                            size: 29,
                           ),
                         ),
                       ),
@@ -1477,12 +1477,12 @@ class _SocialSection extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 14,
-                          vertical: 12,
+                          vertical: 11,
                         ),
                         decoration: BoxDecoration(
                           color: tileBg,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: tileBorder, width: 1.2),
+                          border: Border.all(color: tileBorder, width: 1.1),
                         ),
                         child: Row(
                           children: [

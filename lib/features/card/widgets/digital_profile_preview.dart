@@ -402,7 +402,7 @@ class _ScreenContent extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(14 * scale, 10 * scale, 14 * scale, 0),
       child: Container(
         width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 12 * scale),
+        padding: EdgeInsets.symmetric(vertical: 11 * scale),
         decoration: BoxDecoration(
           color: _accentColor,
           borderRadius: BorderRadius.circular(999),
@@ -419,7 +419,7 @@ class _ScreenContent extends StatelessWidget {
             Text(
               'Guardar contacto',
               style: GoogleFonts.outfit(
-                fontSize: 12 * scale,
+                fontSize: 11.5 * scale,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
               ),
@@ -558,8 +558,8 @@ class _ScreenContent extends StatelessWidget {
             children: [
               for (final link in socials.take(5))
                 Container(
-                  width: 44 * scale,
-                  height: 44 * scale,
+                  width: 50 * scale,
+                  height: 50 * scale,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -572,7 +572,7 @@ class _ScreenContent extends StatelessWidget {
                     child: PlatformIcon.social(
                       platform: link.platform,
                       framed: false,
-                      size: 23 * scale,
+                      size: 26 * scale,
                     ),
                   ),
                 ),
@@ -640,7 +640,7 @@ class _ScreenContent extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: 13 * scale,
-        vertical: 11 * scale,
+        vertical: 10 * scale,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -782,7 +782,7 @@ class _ScreenContent extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: 13 * scale,
-        vertical: 11 * scale,
+        vertical: 10 * scale,
       ),
       decoration: BoxDecoration(
         color: filled ? _accentColor : Colors.transparent,
@@ -827,11 +827,14 @@ class _ScreenContent extends StatelessWidget {
     bool titleFirst = false,
   }) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 9 * scale, vertical: 7 * scale),
+      padding: EdgeInsets.symmetric(
+        horizontal: 9 * scale,
+        vertical: 6.5 * scale,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(11 * scale),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1.1),
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 1.0),
       ),
       child: Row(
         children: [
