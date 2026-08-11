@@ -27,9 +27,9 @@ class Responsive {
       case ScreenSize.mobile:
         return double.infinity;
       case ScreenSize.tablet:
-        return 520;
+        return 600;
       case ScreenSize.desktop:
-        return 480;
+        return 680;
     }
   }
 

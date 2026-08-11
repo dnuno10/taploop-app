@@ -19,17 +19,11 @@ import '../../analytics/models/analytics_summary_model.dart';
 import '../../analytics/widgets/visit_event_tile.dart';
 import '../../analytics/widgets/link_stats_bar.dart';
 import '../../analytics/widgets/weekly_visits_chart.dart';
-import 'lead_intelligence_view.dart';
-import 'sales_outcome_view.dart';
-import 'pipeline_view.dart';
 
-Color _analyticsPanelSurfaceColor(BuildContext context) =>
-    context.bgSubtle.withValues(alpha: 0.5);
+Color _analyticsPanelSurfaceColor(BuildContext context) => context.bgCard;
 
-Color _analyticsPanelBorderColor(BuildContext context) => context.borderSoft;
-
-Color _pipelinePanelSurfaceColor(BuildContext context) =>
-    context.bgPage.withValues(alpha: 0.5);
+Color _analyticsPanelBorderColor(BuildContext context) =>
+    context.borderStrongSoft;
 
 bool _hasAnalyticsRecords(AnalyticsSummaryModel analytics) {
   return analytics.totalInteractions > 0 ||
@@ -46,9 +40,7 @@ class AnalyticsDashboardView extends StatefulWidget {
   State<AnalyticsDashboardView> createState() => _AnalyticsDashboardViewState();
 }
 
-class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tab;
+class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
   AnalyticsSummaryModel? _analytics;
   bool _loading = true;
   late DateTimeRange _range;
@@ -60,7 +52,6 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 4, vsync: this);
     appState.addListener(_onAppStateChanged);
     final now = DateTime.now();
     _range = DateTimeRange(
@@ -334,7 +325,6 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
   void dispose() {
     appState.removeListener(_onAppStateChanged);
     _metricsRealtime?.close();
-    _tab.dispose();
     super.dispose();
   }
 
@@ -344,6 +334,52 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
     final isDesktop = Responsive.isDesktop(context);
     final isMobile = Responsive.isMobile(context);
     final hasLinkedCard = appState.currentCard != null;
+    final titleBlock = ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: isDesktop ? 320 : 240,
+        maxWidth: isDesktop ? 560 : double.infinity,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Analíticas',
+            style: GoogleFonts.outfit(
+              fontSize: isDesktop ? 42 : 30,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Mide el rendimiento general de tu tarjeta digital.',
+            style: GoogleFonts.dmSans(
+              fontSize: 15,
+              color: context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+    final actionsBlock = Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      alignment: WrapAlignment.end,
+      children: [
+        _PeriodChip(label: 'Todo', onTap: _pickRange),
+        _ExportActionButton(
+          label: 'CSV',
+          icon: Icons.table_chart_outlined,
+          onTap: _loading || _analytics == null ? null : _exportCsv,
+        ),
+        _ExportActionButton(
+          label: 'PDF',
+          icon: Icons.picture_as_pdf_outlined,
+          onTap: _loading || _analytics == null ? null : _exportPdf,
+        ),
+      ],
+    );
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -358,163 +394,63 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
                 color: Colors.white,
                 border: Border(bottom: BorderSide(color: context.borderColor)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: isDesktop ? 320 : 240,
-                      maxWidth: isDesktop ? 480 : double.infinity,
-                    ),
-                    child: Column(
+              child: isDesktop
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(child: titleBlock),
+                        if (hasLinkedCard) actionsBlock,
+                      ],
+                    )
+                  : Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Analíticas',
-                          style: GoogleFonts.outfit(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: context.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Monitorea visitas, taps, leads y rendimiento comercial en un solo panel.',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: context.textSecondary,
-                          ),
-                        ),
+                        titleBlock,
+                        if (hasLinkedCard) ...[
+                          const SizedBox(height: 14),
+                          actionsBlock,
+                        ],
                       ],
                     ),
-                  ),
-                  if (hasLinkedCard) ...[
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _PeriodChip(
-                          label:
-                              '${_fmtDate(_range.start)} – ${_fmtDate(_range.end)}',
-                          onTap: _pickRange,
-                        ),
-                        _ExportActionButton(
-                          label: 'CSV',
-                          icon: Icons.table_chart_outlined,
-                          onTap: _loading || _analytics == null
-                              ? null
-                              : _exportCsv,
-                        ),
-                        _ExportActionButton(
-                          label: 'PDF',
-                          icon: Icons.picture_as_pdf_outlined,
-                          onTap: _loading || _analytics == null
-                              ? null
-                              : _exportPdf,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: context.bgSubtle,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: TabBar(
-                          controller: _tab,
-                          isScrollable: true,
-                          tabs: const [
-                            Tab(text: 'Métricas'),
-                            Tab(text: 'Leads'),
-                            Tab(text: 'Pipeline'),
-                            Tab(text: 'Ventas'),
-                          ],
-                          indicator: BoxDecoration(
-                            color: context.bgCard,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: context.borderColor),
-                          ),
-                          indicatorSize: TabBarIndicatorSize.tab,
-                          dividerColor: Colors.transparent,
-                          labelColor: context.textPrimary,
-                          unselectedLabelColor: context.textSecondary,
-                          labelStyle: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          unselectedLabelStyle: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          tabAlignment: TabAlignment.start,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
             ),
             Expanded(
               child: Container(
                 color: context.bgPage,
                 child: hasLinkedCard
-                    ? TabBarView(
-                        controller: _tab,
-                        children: [
-                          // ── Mis métricas ────────────────────────────────────────────────
-                          _AnalyticsTabPanel(
-                            surfaceColor: Colors.white,
-                            showBorder: false,
-                            child: SingleChildScrollView(
-                              child: _loading
-                                  ? const SizedBox(
-                                      height: 300,
-                                      child: Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    )
-                                  : analytics == null ||
-                                        !_hasAnalyticsRecords(analytics)
-                                  ? const SizedBox(
-                                      height: 300,
-                                      child: EmptyDataState(
-                                        centered: true,
-                                        hint:
-                                            'No hay registros en el rango seleccionado.',
-                                      ),
-                                    )
-                                  : isDesktop
-                                  ? _DesktopLayout(
-                                      analytics: analytics,
-                                      rangeEnd: _range.end,
-                                    )
-                                  : _MobileLayout(
-                                      analytics: analytics,
-                                      isMobile: isMobile,
-                                      rangeEnd: _range.end,
-                                    ),
-                            ),
-                          ),
-                          const _AnalyticsTabPanel(
-                            surfaceColor: Colors.white,
-                            showBorder: false,
-                            child: LeadIntelligenceView(),
-                          ),
-                          _AnalyticsTabPanel(
-                            surfaceColor: _pipelinePanelSurfaceColor(context),
-                            showBorder: false,
-                            child: const PipelineView(),
-                          ),
-                          const _AnalyticsTabPanel(
-                            surfaceColor: Colors.white,
-                            showBorder: false,
-                            child: SalesOutcomeView(),
-                          ),
-                        ],
+                    ? SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          isDesktop ? 36 : 18,
+                          isDesktop ? 28 : 18,
+                          isDesktop ? 36 : 18,
+                          36,
+                        ),
+                        child: _loading
+                            ? const SizedBox(
+                                height: 300,
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            : analytics == null ||
+                                  !_hasAnalyticsRecords(analytics)
+                            ? const SizedBox(
+                                height: 300,
+                                child: EmptyDataState(
+                                  centered: true,
+                                  hint:
+                                      'No hay registros en el rango seleccionado.',
+                                ),
+                              )
+                            : isDesktop
+                            ? _DesktopLayout(
+                                analytics: analytics,
+                                rangeEnd: _range.end,
+                              )
+                            : _MobileLayout(
+                                analytics: analytics,
+                                isMobile: isMobile,
+                                rangeEnd: _range.end,
+                              ),
                       )
                     : SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
@@ -526,34 +462,6 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView>
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _AnalyticsTabPanel extends StatelessWidget {
-  final Widget child;
-  final Color? surfaceColor;
-  final bool showBorder;
-
-  const _AnalyticsTabPanel({
-    required this.child,
-    this.surfaceColor,
-    this.showBorder = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Container(
-        decoration: BoxDecoration(
-          color: surfaceColor ?? _analyticsPanelSurfaceColor(context),
-          borderRadius: BorderRadius.circular(28),
-          border: showBorder ? Border.all(color: context.borderColor) : null,
-        ),
-        clipBehavior: Clip.hardEdge,
-        child: child,
       ),
     );
   }
@@ -608,40 +516,27 @@ class _DesktopLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 7,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _TotalBlock(analytics: analytics),
-                  const SizedBox(height: 24),
-                  _MetricRow(analytics: analytics),
-                  const SizedBox(height: 28),
-                  _ChartBlock(analytics: analytics, rangeEnd: rangeEnd),
-                  const SizedBox(height: 28),
-                  _LinksBlock(analytics: analytics),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 7,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _TotalBlock(analytics: analytics),
+              const SizedBox(height: 22),
+              _MetricRow(analytics: analytics),
+              const SizedBox(height: 22),
+              _ChartBlock(analytics: analytics, rangeEnd: rangeEnd),
+              const SizedBox(height: 22),
+              _LinksBlock(analytics: analytics),
+            ],
           ),
-          const SizedBox(width: 20),
-          SizedBox(
-            width: 320,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 10, 0, 14),
-              child: _ActivityBlock(analytics: analytics),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 24),
+        SizedBox(width: 420, child: _ActivityBlock(analytics: analytics)),
+      ],
     );
   }
 }
@@ -665,7 +560,7 @@ class _TotalBlock extends StatelessWidget {
         : AppColors.error;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
       decoration: BoxDecoration(
         color: _analyticsPanelSurfaceColor(context),
         borderRadius: BorderRadius.circular(22),
@@ -677,22 +572,22 @@ class _TotalBlock extends StatelessWidget {
           Text(
             'Interacciones totales',
             style: GoogleFonts.dmSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
               color: context.textSecondary,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 36),
           Text(
             '$total',
             style: GoogleFonts.outfit(
-              fontSize: 56,
+              fontSize: 58,
               fontWeight: FontWeight.w800,
               color: context.textPrimary,
               height: 1.0,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 22),
           Row(
             children: [
               Container(
@@ -803,7 +698,7 @@ class _MetricRow extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
       decoration: BoxDecoration(
         color: _analyticsPanelSurfaceColor(context),
         borderRadius: BorderRadius.circular(22),
@@ -822,7 +717,7 @@ class _MetricRow extends StatelessWidget {
                       Container(
                         width: 1,
                         height: 52,
-                        color: context.borderColor,
+                        color: context.borderStrongSoft,
                         margin: const EdgeInsets.symmetric(horizontal: 12),
                       ),
                   ],
@@ -968,7 +863,7 @@ class _ChartBlock extends StatelessWidget {
         : AppColors.error;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       decoration: BoxDecoration(
         color: _analyticsPanelSurfaceColor(context),
         borderRadius: BorderRadius.circular(22),
@@ -983,8 +878,8 @@ class _ChartBlock extends StatelessWidget {
               Text(
                 'Visitas por día',
                 style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
                   color: context.textPrimary,
                 ),
               ),
@@ -1030,9 +925,9 @@ class _ChartBlock extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 30),
           SizedBox(
-            height: 180,
+            height: 320,
             child: WeeklyVisitsChart(
               visitsByDay: analytics.visitsByDay,
               referenceDate: rangeEnd,
@@ -1053,7 +948,7 @@ class _LinksBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       decoration: BoxDecoration(
         color: _analyticsPanelSurfaceColor(context),
         borderRadius: BorderRadius.circular(22),
@@ -1067,8 +962,8 @@ class _LinksBlock extends StatelessWidget {
               Text(
                 'Links más clickeados',
                 style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
                   color: context.textPrimary,
                 ),
               ),
@@ -1106,7 +1001,7 @@ class _LinksBlock extends StatelessWidget {
                 if (i < analytics.linkStats.length - 1)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Divider(color: context.borderColor, height: 1),
+                    child: Divider(color: context.borderStrongSoft, height: 1),
                   ),
               ],
             );
@@ -1126,7 +1021,7 @@ class _ActivityBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 28),
       decoration: BoxDecoration(
         color: _analyticsPanelSurfaceColor(context),
         borderRadius: BorderRadius.circular(22),
@@ -1138,8 +1033,8 @@ class _ActivityBlock extends StatelessWidget {
           Text(
             'Actividad reciente',
             style: GoogleFonts.outfit(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
               color: context.textPrimary,
             ),
           ),
@@ -1158,7 +1053,7 @@ class _ActivityBlock extends StatelessWidget {
                 children: [
                   VisitEventTile(event: analytics.recentEvents[i]),
                   if (i < analytics.recentEvents.length - 1)
-                    Divider(color: context.borderColor, height: 1),
+                    Divider(color: context.borderStrongSoft, height: 1),
                 ],
               );
             },

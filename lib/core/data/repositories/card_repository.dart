@@ -48,16 +48,21 @@ class CardRepository {
         .eq('card_id', cardId)
         .order('sort_order');
 
-    final cardData = await cardFuture;
-    final contacts = await contactsFuture;
-    final socials = await socialsFuture;
+    final results = await Future.wait<dynamic>([
+      cardFuture,
+      contactsFuture,
+      socialsFuture,
+    ]);
+    final cardData = results[0] as Map<String, dynamic>;
+    final contacts = results[1] as List;
+    final socials = results[2] as List;
 
     return buildCardModel(
       cardData,
-      contactItems: (contacts as List)
+      contactItems: contacts
           .map((e) => ContactItemModel.fromJson(e as Map<String, dynamic>))
           .toList(),
-      socialLinks: (socials as List)
+      socialLinks: socials
           .map((e) => SocialLinkModel.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
@@ -128,7 +133,16 @@ class CardRepository {
     );
     final cardId = (result as String?)?.trim();
     if (cardId == null || cardId.isEmpty) return null;
-    return fetchCard(cardId);
+    final rows = await _db
+        .from('digital_cards')
+        .select()
+        .eq('id', cardId)
+        .limit(1);
+    if ((rows as List).isEmpty) return null;
+    return _fetchWithItems(
+      rows.first,
+      includeOrganizationLogo: includeOrganizationLogo,
+    );
   }
 
   // ─── Activate NFC card (link serial → current user) ──────────────────────
@@ -231,8 +245,10 @@ class CardRepository {
           'is_active': true,
           'theme_style': 'black',
           'layout_style': 'centered',
+          'profile_design': 'classic',
           'primary_color': 0xFFEF6820,
           'bg_style': 'plain',
+          'show_verified_badge': false,
         })
         .select()
         .single();
@@ -299,8 +315,10 @@ class CardRepository {
           'is_active': true,
           'theme_style': 'black',
           'layout_style': 'centered',
+          'profile_design': 'classic',
           'primary_color': 0xFFEF6820,
           'bg_style': 'plain',
+          'show_verified_badge': false,
         })
         .select()
         .single();
@@ -355,16 +373,17 @@ class CardRepository {
         .eq('is_visible', true)
         .order('sort_order');
 
-    final contacts = await contactsFuture;
-    final socials = await socialsFuture;
+    final results = await Future.wait<dynamic>([contactsFuture, socialsFuture]);
+    final contacts = results[0] as List;
+    final socials = results[1] as List;
 
     return buildCardModel(
       cardJson,
       includeOrganizationLogo: includeOrganizationLogo,
-      contactItems: (contacts as List)
+      contactItems: contacts
           .map((e) => ContactItemModel.fromJson(e as Map<String, dynamic>))
           .toList(),
-      socialLinks: (socials as List)
+      socialLinks: socials
           .map((e) => SocialLinkModel.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
@@ -382,7 +401,10 @@ class CardRepository {
           as String?,
     );
     hydratedJson.remove('company_logo_url');
-    final resolvedOrgId = await resolveCardOrganizationId(hydratedJson);
+    final directOrgId = (hydratedJson['org_id'] as String?)?.trim();
+    final resolvedOrgId = includeOrganizationLogo
+        ? await resolveCardOrganizationId(hydratedJson)
+        : directOrgId;
     if (resolvedOrgId != null && resolvedOrgId.isNotEmpty) {
       hydratedJson['org_id'] = resolvedOrgId;
     }
@@ -542,6 +564,26 @@ class CardRepository {
     await _db.from('digital_cards').update(card.toJson()).eq('id', card.id);
   }
 
+  static Future<void> updateVerifiedBadge({
+    required String cardId,
+    required bool showVerifiedBadge,
+  }) async {
+    await _db
+        .from('digital_cards')
+        .update({'show_verified_badge': showVerifiedBadge})
+        .eq('id', cardId);
+  }
+
+  static Future<void> updateProfilePhoto({
+    required String cardId,
+    required String profilePhotoUrl,
+  }) async {
+    await _db
+        .from('digital_cards')
+        .update({'profile_photo_url': profilePhotoUrl})
+        .eq('id', cardId);
+  }
+
   static Future<void> deleteCard(String cardId) async {
     await _db.from('digital_cards').delete().eq('id', cardId);
   }
@@ -654,34 +696,21 @@ class CardRepository {
         .eq('card_id', cardId)
         .order('created_at');
 
-    final forms = <SmartFormModel>[];
-    for (final row in (formsRows as List)) {
-      final formId = row['id'] as String;
-      final fieldsRows = await _db
-          .from('smart_form_fields')
-          .select()
-          .eq('form_id', formId)
-          .order('sort_order');
-      final fields = (fieldsRows as List)
-          .map((e) => SmartFormFieldModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      forms.add(
-        SmartFormModel.fromJson(row as Map<String, dynamic>, fields: fields),
-      );
-    }
-    return forms;
+    return (formsRows as List)
+        .map((row) => SmartFormModel.fromJson(row as Map<String, dynamic>))
+        .toList();
   }
 
   static Future<SmartFormModel> createSmartForm(
     String cardId,
-    String name,
+    SmartFormModel form,
   ) async {
     final data = await _db
         .from('smart_forms')
-        .insert({'card_id': cardId, 'name': name, 'is_active': true})
+        .insert(form.toJson(cardId: cardId))
         .select()
         .single();
-    return SmartFormModel.fromJson(data, fields: const []);
+    return SmartFormModel.fromJson(data);
   }
 
   static Future<void> updateSmartForm(SmartFormModel form) async {
@@ -689,51 +718,38 @@ class CardRepository {
   }
 
   static Future<void> deleteSmartForm(String formId) async {
-    await _db.from('smart_form_fields').delete().eq('form_id', formId);
+    try {
+      await _db.rpc('delete_smart_form', params: {'p_form_id': formId});
+      return;
+    } catch (error) {
+      if (!_isMissingDeleteSmartFormRpc(error)) rethrow;
+    }
+
+    await _db.from('form_submissions').delete().eq('form_id', formId);
+    await _db
+        .from('visit_events')
+        .update({'smart_form_id': null})
+        .eq('smart_form_id', formId);
+    try {
+      await _db.from('smart_form_fields').delete().eq('form_id', formId);
+    } catch (error) {
+      if (!_isMissingLegacySmartFormFieldsTable(error)) rethrow;
+    }
     await _db.from('smart_forms').delete().eq('id', formId);
   }
 
-  static Future<SmartFormFieldModel> addSmartFormField(
-    String formId,
-    SmartFormFieldModel field,
-  ) async {
-    final last = await _db
-        .from('smart_form_fields')
-        .select('sort_order')
-        .eq('form_id', formId)
-        .order('sort_order', ascending: false)
-        .limit(1);
-    final nextOrder = (last as List).isEmpty
-        ? 0
-        : ((last.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
-
-    final data = await _db
-        .from('smart_form_fields')
-        .insert(field.copyWith(sortOrder: nextOrder).toJson(formId: formId))
-        .select()
-        .single();
-    return SmartFormFieldModel.fromJson(data);
+  static bool _isMissingDeleteSmartFormRpc(Object error) {
+    final message = error.toString();
+    return message.contains('delete_smart_form') ||
+        message.contains('PGRST202') ||
+        message.contains('Could not find the function');
   }
 
-  static Future<void> updateSmartFormField(SmartFormFieldModel field) async {
-    await _db
-        .from('smart_form_fields')
-        .update(field.toJson())
-        .eq('id', field.id);
-  }
-
-  static Future<void> deleteSmartFormField(String fieldId) async {
-    await _db.from('smart_form_fields').delete().eq('id', fieldId);
-  }
-
-  static Future<void> reorderSmartFormFields(
-    List<SmartFormFieldModel> fields,
-  ) async {
-    for (var i = 0; i < fields.length; i++) {
-      await _db
-          .from('smart_form_fields')
-          .update({'sort_order': i})
-          .eq('id', fields[i].id);
-    }
+  static bool _isMissingLegacySmartFormFieldsTable(Object error) {
+    final message = error.toString();
+    return message.contains('smart_form_fields') &&
+        (message.contains('42P01') ||
+            message.contains('does not exist') ||
+            message.contains('Could not find the table'));
   }
 }

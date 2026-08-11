@@ -291,61 +291,49 @@ class _DesktopLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1180),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(64, 44, 64, 56),
-          child: Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(48, 36, 48, 56),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SectionPanel(child: _CardHeroSection(hPad: 0, analytics: analytics)),
+          const SizedBox(height: 24),
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Left — overview and contact actions
-              SizedBox(
-                width: 420,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SectionPanel(
-                      child: _CardHeroSection(hPad: 0, analytics: analytics),
-                    ),
-                    const SizedBox(height: 24),
-                    _SectionPanel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const _SectionHeading(
-                            title: 'Compartir contacto',
-                            subtitle:
-                                'Administra el enlace principal y distribúyelo desde aquí.',
-                          ),
-                          const SizedBox(height: 18),
-                          _LinkBar(copied: linkCopied, onCopy: onCopy),
-                          const SizedBox(height: 20),
-                          const _QuickShareSection(),
-                        ],
+              Expanded(
+                flex: 6,
+                child: _SectionPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SectionHeading(
+                        title: 'Compartir contacto',
+                        subtitle:
+                            'Administra el enlace principal y distribúyelo desde aquí.',
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 18),
+                      _LinkBar(copied: linkCopied, onCopy: onCopy),
+                      const SizedBox(height: 20),
+                      const _QuickShareSection(),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: 44),
+              const SizedBox(width: 24),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SectionPanel(
-                      child: _QrSection(
-                        qrColor: qrColor,
-                        qrPalette: qrPalette,
-                        onQrColorChanged: onQrColorChanged,
-                      ),
-                    ),
-                  ],
+                flex: 4,
+                child: _SectionPanel(
+                  child: _QrSection(
+                    qrColor: qrColor,
+                    qrPalette: qrPalette,
+                    onQrColorChanged: onQrColorChanged,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }

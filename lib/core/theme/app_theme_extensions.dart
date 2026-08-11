@@ -29,9 +29,9 @@ extension AppThemeX on BuildContext {
   Color get borderStrong =>
       isDark ? const Color(0xFF475569) : const Color(0xFFBCC8D6);
 
-  Color get borderSoft => borderColor.withValues(alpha: 0.2);
+  Color get borderSoft => borderColor.withValues(alpha: 0.5);
 
-  Color get borderStrongSoft => borderStrong.withValues(alpha: 0.2);
+  Color get borderStrongSoft => borderStrong.withValues(alpha: 0.46);
 
   // ─── Text ─────────────────────────────────────────────────────────────────
   Color get textPrimary =>

@@ -276,15 +276,17 @@ class _ProfileCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: context.bgSubtle,
-            child: Text(
-              _initials(title),
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: context.textPrimary,
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: Center(
+              child: Text(
+                _initials(title),
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: context.textPrimary,
+                ),
               ),
             ),
           ),

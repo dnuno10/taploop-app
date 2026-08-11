@@ -8,6 +8,9 @@ class NativeWebImage extends StatelessWidget {
   final BoxShape shape;
   final BorderRadius? borderRadius;
   final Color? backgroundColor;
+  final Widget? fallback;
+  final bool eager;
+  final bool highPriority;
 
   const NativeWebImage({
     super.key,
@@ -18,6 +21,9 @@ class NativeWebImage extends StatelessWidget {
     this.shape = BoxShape.rectangle,
     this.borderRadius,
     this.backgroundColor,
+    this.fallback,
+    this.eager = false,
+    this.highPriority = false,
   });
 
   @override
@@ -28,9 +34,15 @@ class NativeWebImage extends StatelessWidget {
       height: height,
       fit: fit,
       gaplessPlayback: true,
-      filterQuality: FilterQuality.high,
+      filterQuality: FilterQuality.medium,
       isAntiAlias: true,
-      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      cacheWidth: width == null
+          ? null
+          : (width! * MediaQuery.devicePixelRatioOf(context)).round(),
+      cacheHeight: height == null
+          ? null
+          : (height! * MediaQuery.devicePixelRatioOf(context)).round(),
+      errorBuilder: (_, __, ___) => fallback ?? const SizedBox.shrink(),
     );
 
     return ClipRRect(

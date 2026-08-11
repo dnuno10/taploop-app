@@ -14,6 +14,7 @@ import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/empty_data_state.dart';
+import '../../../core/widgets/taploop_motion.dart';
 import '../../analytics/models/analytics_summary_model.dart';
 import '../../analytics/models/lead_model.dart';
 import '../../analytics/models/link_stat_model.dart';
@@ -21,8 +22,7 @@ import '../../analytics/models/visit_event_model.dart';
 import '../../card/models/digital_card_model.dart';
 
 Color _panelBorderColor(BuildContext context) => context.borderSoft;
-Color _panelSurfaceColor(BuildContext context) =>
-    context.bgSubtle.withValues(alpha: 0.5);
+Color _panelSurfaceColor(BuildContext context) => context.bgCard;
 
 bool _hasAnalyticsData(AnalyticsSummaryModel? analytics) {
   if (analytics == null) return false;
@@ -140,7 +140,16 @@ class _DashboardViewState extends State<DashboardView> {
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: _loading || isResolvingCard
-            ? const Center(child: CircularProgressIndicator())
+            ? Center(
+                child: SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              )
             : LayoutBuilder(
                 builder: (context, constraints) {
                   final isDesktop = constraints.maxWidth >= 1180;
@@ -395,7 +404,6 @@ class _DashboardHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = appState.currentUser;
     final isWide = MediaQuery.of(context).size.width >= 920;
     final isCompact = MediaQuery.of(context).size.width < 680;
     final actions = [
@@ -423,56 +431,24 @@ class _DashboardHeader extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Panel principal',
-                      style: GoogleFonts.outfit(
-                        color: context.textPrimary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Monitorea visitas, leads y rendimiento de tu tarjeta TapLoop en un solo flujo.',
-                      style: GoogleFonts.dmSans(
-                        color: context.textSecondary,
-                        fontSize: 14,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
+              Text(
+                'Panel principal',
+                style: GoogleFonts.outfit(
+                  color: context.textPrimary,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(width: 14),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: _panelSurfaceColor(context),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: _panelBorderColor(context)),
-                ),
-                child: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: context.bgSubtle,
-                  backgroundImage: user?.photoUrl?.isNotEmpty == true
-                      ? NetworkImage(user!.photoUrl!)
-                      : null,
-                  child: user?.photoUrl?.isNotEmpty == true
-                      ? null
-                      : Text(
-                          user?.initials ?? 'TL',
-                          style: GoogleFonts.outfit(
-                            color: context.textPrimary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+              const SizedBox(height: 6),
+              Text(
+                'Monitorea visitas, leads y rendimiento de tu tarjeta TapLoop en un solo flujo.',
+                style: GoogleFonts.dmSans(
+                  color: context.textSecondary,
+                  fontSize: 14,
+                  height: 1.45,
                 ),
               ),
             ],
@@ -503,69 +479,52 @@ class _DashboardHeader extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ConstrainedBox(
-          constraints: BoxConstraints(
-            minWidth: isWide ? 320 : 240,
-            maxWidth: isWide ? 460 : MediaQuery.of(context).size.width,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Panel principal',
-                style: GoogleFonts.outfit(
-                  color: context.textPrimary,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w800,
+        Expanded(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: isWide ? 460 : MediaQuery.of(context).size.width,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Panel principal',
+                  style: GoogleFonts.outfit(
+                    color: context.textPrimary,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Monitorea visitas, leads y rendimiento de tu tarjeta TapLoop en un solo flujo.',
-                style: GoogleFonts.dmSans(
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  height: 1.45,
+                const SizedBox(height: 6),
+                Text(
+                  'Monitorea visitas, leads y rendimiento de tu tarjeta TapLoop en un solo flujo.',
+                  style: GoogleFonts.dmSans(
+                    color: context.textSecondary,
+                    fontSize: 14,
+                    height: 1.45,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-        for (final action in actions)
-          _HeaderButton(
-            label: action.label,
-            icon: action.icon,
-            filled: action.filled,
-            onTap: action.onTap,
-          ),
-        Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: _panelSurfaceColor(context),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _panelBorderColor(context)),
-          ),
-          child: CircleAvatar(
-            radius: 20,
-            backgroundColor: context.bgSubtle,
-            backgroundImage: user?.photoUrl?.isNotEmpty == true
-                ? NetworkImage(user!.photoUrl!)
-                : null,
-            child: user?.photoUrl?.isNotEmpty == true
-                ? null
-                : Text(
-                    user?.initials ?? 'TL',
-                    style: GoogleFonts.outfit(
-                      color: context.textPrimary,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-          ),
+        const SizedBox(width: 18),
+        Wrap(
+          spacing: 14,
+          runSpacing: 12,
+          alignment: WrapAlignment.end,
+          children: [
+            for (final action in actions)
+              _HeaderButton(
+                label: action.label,
+                icon: action.icon,
+                filled: action.filled,
+                onTap: action.onTap,
+              ),
+          ],
         ),
       ],
     );
@@ -587,39 +546,39 @@ class _HeaderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-          decoration: BoxDecoration(
-            color: _panelSurfaceColor(context),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: filled ? AppColors.primary : context.borderColor,
+    return TapLoopPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      hoverColor: filled
+          ? Colors.white.withValues(alpha: 0.04)
+          : TapLoopMotion.hoverSurfaceColor(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: filled ? AppColors.primary : _panelSurfaceColor(context),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: filled ? AppColors.primary : context.borderStrongSoft,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: filled ? Colors.white : const Color(0xFF334155),
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 17,
-                color: filled ? AppColors.primary : context.textPrimary,
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.dmSans(
+                color: filled ? Colors.white : const Color(0xFF334155),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
               ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: GoogleFonts.dmSans(
-                  color: filled ? AppColors.primary : context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -965,12 +924,6 @@ class _QuickActions extends StatelessWidget {
         onTap: () => onNavigate(2),
       ),
       (
-        icon: Icons.campaign_outlined,
-        label: 'Abrir campañas',
-        description: 'Activa campañas y seguimiento comercial.',
-        onTap: () => onNavigate(5),
-      ),
-      (
         icon: Icons.language_rounded,
         label: 'Ver perfil público',
         description: 'Revisa el perfil que ve tu lead.',
@@ -1057,57 +1010,50 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: EdgeInsets.all(compact ? 12 : 14),
-          decoration: BoxDecoration(
-            color: _panelSurfaceColor(context),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _panelBorderColor(context)),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: context.textSecondary, size: 18),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.dmSans(
-                        color: context.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      description,
-                      style: GoogleFonts.dmSans(
-                        color: context.textSecondary,
-                        fontSize: compact ? 11 : 12,
-                        height: 1.35,
-                      ),
-                      maxLines: compact ? 2 : null,
-                      overflow: compact ? TextOverflow.ellipsis : null,
-                    ),
-                  ],
+    return TapLoopHoverSurface(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      color: _panelSurfaceColor(context),
+      hoverColor: TapLoopMotion.hoverSurfaceColor(context),
+      border: Border.all(color: _panelBorderColor(context)),
+      padding: EdgeInsets.all(compact ? 12 : 14),
+      child: Row(
+        children: [
+          Icon(icon, color: context.textSecondary, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.dmSans(
+                    color: context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.arrow_forward_rounded,
-                color: context.textSecondary,
-                size: 18,
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: GoogleFonts.dmSans(
+                    color: context.textSecondary,
+                    fontSize: compact ? 11 : 12,
+                    height: 1.35,
+                  ),
+                  maxLines: compact ? 2 : null,
+                  overflow: compact ? TextOverflow.ellipsis : null,
+                ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Icon(
+            Icons.arrow_forward_rounded,
+            color: context.textSecondary,
+            size: 18,
+          ),
+        ],
       ),
     );
   }
@@ -1929,15 +1875,17 @@ class _Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _panelSurfaceColor(context),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: _panelBorderColor(context)),
+    return TapLoopFadeSlide(
+      child: Container(
+        width: double.infinity,
+        padding: padding,
+        decoration: BoxDecoration(
+          color: _panelSurfaceColor(context),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: _panelBorderColor(context)),
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -2108,28 +2056,28 @@ class _ModeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: active ? context.bgSubtle : context.bgCard,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: active ? AppColors.primary : context.borderColor,
-            ),
+    return TapLoopPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      hoverColor: TapLoopMotion.hoverSurfaceColor(context),
+      child: AnimatedContainer(
+        duration: TapLoopMotion.fast,
+        curve: TapLoopMotion.standard,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: active ? context.bgSubtle : context.bgCard,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: active ? AppColors.primary : context.borderColor,
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.dmSans(
-                color: context.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: GoogleFonts.dmSans(
+              color: context.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),

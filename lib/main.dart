@@ -8,7 +8,8 @@ import 'core/services/supabase_service.dart';
 import 'core/services/auth_service.dart';
 import 'core/data/app_state.dart';
 import 'core/theme/app_theme.dart';
-import 'core/theme/app_theme_extensions.dart';
+import 'core/widgets/taploop_loading_view.dart';
+import 'core/widgets/taploop_motion.dart';
 import 'features/home/views/home_shell.dart';
 import 'features/auth/views/login_view.dart';
 import 'features/auth/views/legal_pages_view.dart';
@@ -90,16 +91,20 @@ final _router = GoRouter(
   routes: [
     GoRoute(
       path: '/',
-      builder: (context, state) =>
-          _AuthGate(pendingNfc: state.uri.queryParameters['pendingNfc']),
+      pageBuilder: (context, state) => _motionPage(
+        state,
+        _AuthGate(pendingNfc: state.uri.queryParameters['pendingNfc']),
+      ),
     ),
     GoRoute(
       path: '/terminos',
-      builder: (context, state) => const TermsAndConditionsView(),
+      pageBuilder: (context, state) =>
+          _motionPage(state, const TermsAndConditionsView()),
     ),
     GoRoute(
       path: '/privacidad',
-      builder: (context, state) => const PrivacyPolicyView(),
+      pageBuilder: (context, state) =>
+          _motionPage(state, const PrivacyPolicyView()),
     ),
     // Flujo anterior comentado a petición del proyecto:
     // GoRoute(
@@ -133,32 +138,55 @@ final _router = GoRouter(
     // ),
     GoRoute(
       path: '/nfc/:serial',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final serial = state.pathParameters['serial']!;
-        final campaignId = state.uri.queryParameters['campaign'];
-        return PublicCardView(nfcSerial: serial, campaignId: campaignId);
+        return _motionPage(state, PublicCardView(nfcSerial: serial));
       },
     ),
     GoRoute(
       path: '/u/:userId',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final userId = state.pathParameters['userId']!;
         final via = state.uri.queryParameters['via'];
-        final campaignId = state.uri.queryParameters['campaign'];
-        return PublicCardView(userId: userId, via: via, campaignId: campaignId);
+        return _motionPage(state, PublicCardView(userId: userId, via: via));
       },
     ),
     GoRoute(
       path: '/:slug',
-      builder: (context, state) {
+      pageBuilder: (context, state) {
         final slug = state.pathParameters['slug']!;
         final via = state.uri.queryParameters['via'];
-        final campaignId = state.uri.queryParameters['campaign'];
-        return PublicCardView(slug: slug, via: via, campaignId: campaignId);
+        return _motionPage(state, PublicCardView(slug: slug, via: via));
       },
     ),
   ],
 );
+
+CustomTransitionPage<void> _motionPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: TapLoopMotion.normal,
+    reverseTransitionDuration: TapLoopMotion.fast,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: TapLoopMotion.entrance,
+        reverseCurve: TapLoopMotion.exit,
+      );
+      return FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.012),
+            end: Offset.zero,
+          ).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -224,18 +252,6 @@ class _BootstrapView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.bgPage,
-      body: Center(
-        child: SizedBox(
-          width: 26,
-          height: 26,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.4,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      ),
-    );
+    return const TapLoopLoadingView(scaffold: true);
   }
 }

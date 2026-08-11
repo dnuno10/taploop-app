@@ -6,7 +6,6 @@ import '../../features/analytics/models/link_stat_model.dart';
 import '../../features/analytics/models/visit_event_model.dart';
 import '../../features/analytics/models/lead_model.dart';
 import '../../features/analytics/models/team_member_model.dart';
-import '../../features/campaigns/models/campaign_model.dart';
 
 class MockData {
   MockData._();
@@ -333,67 +332,6 @@ class MockData {
       profileViews: 98,
       contactsSaved: 14,
       conversions: 4,
-    ),
-  ];
-
-  // ─── Campaigns ────────────────────────────────────────────────────────────
-
-  static final List<CampaignModel> campaigns = [
-    CampaignModel(
-      id: 'c1',
-      name: 'Expo Industrial 2026',
-      eventType: 'Expo',
-      eventDate: DateTime(2026, 3, 14),
-      location: 'Monterrey, NL',
-      description:
-          'Exposición industrial anual con líderes de manufactura y logística.',
-      status: CampaignStatus.upcoming,
-      taps: 0,
-      leads: 0,
-      conversions: 0,
-      assignedMemberNames: ['Ana Martínez', 'Carlos Mendoza'],
-    ),
-    CampaignModel(
-      id: 'c2',
-      name: 'Feria Médica Nacional',
-      eventType: 'Feria',
-      eventDate: DateTime(2025, 11, 20),
-      location: 'Ciudad de México, CDMX',
-      description:
-          'Feria de salud y tecnología médica. Conectamos con distribuidores y directores de hospitales.',
-      status: CampaignStatus.active,
-      taps: 148,
-      leads: 47,
-      conversions: 12,
-      assignedMemberNames: ['Ana Martínez', 'Luis Pérez', 'Diana Flores'],
-    ),
-    CampaignModel(
-      id: 'c3',
-      name: 'Evento Empresarial MTY',
-      eventType: 'Networking',
-      eventDate: DateTime(2025, 9, 5),
-      location: 'Monterrey, NL',
-      description:
-          'Encuentro de empresarios del noreste. Sesiones de networking y presentaciones de casos de éxito.',
-      status: CampaignStatus.finished,
-      taps: 312,
-      leads: 89,
-      conversions: 31,
-      assignedMemberNames: ['Carlos Mendoza', 'Luis Pérez'],
-    ),
-    CampaignModel(
-      id: 'c4',
-      name: 'Congreso Fintech 2025',
-      eventType: 'Congreso',
-      eventDate: DateTime(2025, 10, 8),
-      location: 'Guadalajara, JAL',
-      description:
-          'Congreso de innovación financiera y pagos digitales para el sector PYME.',
-      status: CampaignStatus.finished,
-      taps: 204,
-      leads: 63,
-      conversions: 19,
-      assignedMemberNames: ['Ana Martínez'],
     ),
   ];
 }

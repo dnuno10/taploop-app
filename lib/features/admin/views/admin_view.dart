@@ -1960,10 +1960,9 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
       (CardThemeStyle.white, 'Blanco'),
       (CardThemeStyle.black, 'Negro'),
     ];
-    final layoutOptions = [
-      (CardLayoutStyle.centered, 'Centrado'),
-      (CardLayoutStyle.leftAligned, 'Izquierda'),
-      (CardLayoutStyle.banner, 'Banner'),
+    final designOptions = [
+      (CardProfileDesign.classic, 'Clásico'),
+      (CardProfileDesign.modern, 'Moderno'),
     ];
     return _adminStepPageShell(
       title: 'Diseño',
@@ -2054,10 +2053,10 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
             }).toList(),
           ),
           const SizedBox(height: 28),
-          _sectionTitle('Layout'),
+          _sectionTitle('Diseño del perfil'),
           const SizedBox(height: 8),
           Text(
-            'Define cómo se organiza el contenido dentro de la tarjeta.',
+            'Define si el perfil público usa el diseño clásico o moderno.',
             style: GoogleFonts.dmSans(
               fontSize: 13,
               color: context.textSecondary,
@@ -2067,13 +2066,16 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: layoutOptions.map((opt) {
-              final selected = _card.layoutStyle == opt.$1;
+            children: designOptions.map((opt) {
+              final selected = _card.profileDesign == opt.$1;
               return MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
                   onTap: () => setState(
-                    () => _card = _card.copyWith(layoutStyle: opt.$1),
+                    () => _card = _card.copyWith(
+                      profileDesign: opt.$1,
+                      layoutStyle: opt.$1.compatibleLayoutStyle,
+                    ),
                   ),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),

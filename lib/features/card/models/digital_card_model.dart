@@ -27,6 +27,26 @@ CardLayoutStyle _layoutStyleFromString(String s) {
   }
 }
 
+enum CardProfileDesign { classic, modern }
+
+CardProfileDesign _profileDesignFromString(String s) {
+  switch (s) {
+    case 'modern':
+      return CardProfileDesign.modern;
+    default:
+      return CardProfileDesign.classic;
+  }
+}
+
+extension CardProfileDesignX on CardProfileDesign {
+  CardLayoutStyle get compatibleLayoutStyle {
+    return switch (this) {
+      CardProfileDesign.classic => CardLayoutStyle.centered,
+      CardProfileDesign.modern => CardLayoutStyle.banner,
+    };
+  }
+}
+
 enum CardBgStyle { plain, gradient, mesh, stripes }
 
 CardBgStyle _bgStyleFromString(String s) {
@@ -59,12 +79,15 @@ class DigitalCardModel {
   final Color? backgroundColorStart;
   final Color? backgroundColorEnd;
   final CardLayoutStyle layoutStyle;
+  final CardProfileDesign profileDesign;
   // Design
   final CardBgStyle bgStyle;
   final Color? bgColor;
   final Color? bgColorEnd;
+  final bool showVerifiedBadge;
 
   bool get textColorIsDark => themeStyle == CardThemeStyle.black;
+  bool get usesModernProfileDesign => profileDesign == CardProfileDesign.modern;
   // Forms & Calendar
   final List<String> enabledForms;
   final bool calendarEnabled;
@@ -98,9 +121,11 @@ class DigitalCardModel {
     this.backgroundColorStart,
     this.backgroundColorEnd,
     this.layoutStyle = CardLayoutStyle.centered,
+    this.profileDesign = CardProfileDesign.classic,
     this.bgStyle = CardBgStyle.plain,
     this.bgColor = Colors.white,
     this.bgColorEnd = Colors.white,
+    this.showVerifiedBadge = false,
     this.enabledForms = const [],
     this.calendarEnabled = false,
     this.calendarUrl,
@@ -126,6 +151,13 @@ class DigitalCardModel {
     final bgColorEndVal = (json['bg_color_end'] as num?)?.toInt();
     final bgColorStartVal = (json['background_color_start'] as num?)?.toInt();
     final bgColorEndDbVal = (json['background_color_end'] as num?)?.toInt();
+    final layoutStyle = _layoutStyleFromString(
+      json['layout_style'] as String? ?? 'centered',
+    );
+    final profileDesign = _profileDesignFromString(
+      json['profile_design'] as String? ??
+          (layoutStyle == CardLayoutStyle.banner ? 'modern' : 'classic'),
+    );
 
     return DigitalCardModel(
       id: json['id'] as String,
@@ -145,9 +177,8 @@ class DigitalCardModel {
       themeStyle: _themeStyleFromString(
         json['theme_style'] as String? ?? 'white',
       ),
-      layoutStyle: _layoutStyleFromString(
-        json['layout_style'] as String? ?? 'centered',
-      ),
+      layoutStyle: layoutStyle,
+      profileDesign: profileDesign,
       primaryColor: Color(primaryColorVal ?? 0xFFEF6820),
       backgroundColorStart: bgColorStartVal != null
           ? Color(bgColorStartVal)
@@ -163,6 +194,7 @@ class DigitalCardModel {
           : null,
       profilePhotoUrl: json['profile_photo_url'] as String?,
       companyLogoUrl: json['company_logo'] as String?,
+      showVerifiedBadge: json['show_verified_badge'] as bool? ?? false,
       enabledForms: (json['enabled_forms'] as List<dynamic>? ?? const [])
           .map((e) => e as String)
           .toList(),
@@ -186,7 +218,8 @@ class DigitalCardModel {
     'deactivation_reason': deactivationReason,
     'deactivated_by': deactivatedBy,
     'theme_style': themeStyle.name,
-    'layout_style': layoutStyle.name,
+    'layout_style': profileDesign.compatibleLayoutStyle.name,
+    'profile_design': profileDesign.name,
     'primary_color': primaryColor.value,
     if (backgroundColorStart != null)
       'background_color_start': backgroundColorStart!.value,
@@ -199,6 +232,7 @@ class DigitalCardModel {
     'calendar_enabled': calendarEnabled,
     if (calendarUrl != null) 'calendar_url': calendarUrl,
     if (profilePhotoUrl != null) 'profile_photo_url': profilePhotoUrl,
+    'show_verified_badge': showVerifiedBadge,
   };
 
   String get publicUrl => 'https://app.taploop.com.mx/$publicSlug';
@@ -218,9 +252,11 @@ class DigitalCardModel {
     Color? backgroundColorStart,
     Color? backgroundColorEnd,
     CardLayoutStyle? layoutStyle,
+    CardProfileDesign? profileDesign,
     CardBgStyle? bgStyle,
     Color? bgColor,
     Color? bgColorEnd,
+    bool? showVerifiedBadge,
     List<String>? enabledForms,
     bool? calendarEnabled,
     String? calendarUrl,
@@ -249,9 +285,11 @@ class DigitalCardModel {
       backgroundColorStart: backgroundColorStart ?? this.backgroundColorStart,
       backgroundColorEnd: backgroundColorEnd ?? this.backgroundColorEnd,
       layoutStyle: layoutStyle ?? this.layoutStyle,
+      profileDesign: profileDesign ?? this.profileDesign,
       bgStyle: bgStyle ?? this.bgStyle,
       bgColor: bgColor ?? this.bgColor,
       bgColorEnd: bgColorEnd ?? this.bgColorEnd,
+      showVerifiedBadge: showVerifiedBadge ?? this.showVerifiedBadge,
       enabledForms: enabledForms ?? this.enabledForms,
       calendarEnabled: calendarEnabled ?? this.calendarEnabled,
       calendarUrl: calendarUrl ?? this.calendarUrl,

@@ -13,6 +13,9 @@ class NativeWebImage extends StatefulWidget {
   final BoxShape shape;
   final BorderRadius? borderRadius;
   final Color? backgroundColor;
+  final Widget? fallback;
+  final bool eager;
+  final bool highPriority;
 
   const NativeWebImage({
     super.key,
@@ -23,6 +26,9 @@ class NativeWebImage extends StatefulWidget {
     this.shape = BoxShape.rectangle,
     this.borderRadius,
     this.backgroundColor,
+    this.fallback,
+    this.eager = false,
+    this.highPriority = false,
   });
 
   @override
@@ -33,6 +39,7 @@ class _NativeWebImageState extends State<NativeWebImage> {
   late final String _viewType;
   late final html.DivElement _root;
   late final html.ImageElement _image;
+  bool _failed = false;
 
   @override
   void initState() {
@@ -57,6 +64,7 @@ class _NativeWebImageState extends State<NativeWebImage> {
   }
 
   void _configureElements() {
+    _failed = false;
     final radius = widget.shape == BoxShape.circle
         ? '9999px'
         : '${widget.borderRadius?.topLeft.x ?? 0}px';
@@ -75,6 +83,10 @@ class _NativeWebImageState extends State<NativeWebImage> {
       ..src = widget.imageUrl
       ..alt = ''
       ..draggable = false;
+    _image
+      ..setAttribute('loading', widget.eager ? 'eager' : 'lazy')
+      ..setAttribute('decoding', 'async')
+      ..setAttribute('fetchpriority', widget.highPriority ? 'high' : 'auto');
     _image.style
       ..width = '100%'
       ..height = '100%'
@@ -84,7 +96,7 @@ class _NativeWebImageState extends State<NativeWebImage> {
       ..backgroundColor = 'transparent';
     _image.onError.first.then((_) {
       if (!mounted) return;
-      _image.remove();
+      setState(() => _failed = true);
     });
 
     _root.children.add(_image);
@@ -111,6 +123,13 @@ class _NativeWebImageState extends State<NativeWebImage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_failed && widget.fallback != null) {
+      return SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: widget.fallback,
+      );
+    }
     return SizedBox(
       width: widget.width,
       height: widget.height,

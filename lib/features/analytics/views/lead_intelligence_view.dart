@@ -163,28 +163,6 @@ String _fmt(DateTime dt) {
   return '$h:$m';
 }
 
-String _fmtDate(DateTime dt) {
-  const months = [
-    'ene',
-    'feb',
-    'mar',
-    'abr',
-    'may',
-    'jun',
-    'jul',
-    'ago',
-    'sep',
-    'oct',
-    'nov',
-    'dic',
-  ];
-  final now = DateTime.now();
-  final diff = now.difference(dt);
-  if (diff.inDays == 0) return 'hoy ${_fmt(dt)}';
-  if (diff.inDays == 1) return 'ayer ${_fmt(dt)}';
-  return '${dt.day} ${months[dt.month - 1]} ${_fmt(dt)}';
-}
-
 String _fmtDay(DateTime dt) {
   const months = [
     'ene',
@@ -216,6 +194,7 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   String? _loadedCardId;
   final TextEditingController _searchCtrl = TextEditingController();
   String _search = '';
+  String _statusFilter = 'all';
   MetricsRealtimeSubscription? _metricsRealtime;
   String? _realtimeCardId;
 
@@ -286,8 +265,12 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   }
 
   List<LeadModel> get _leads {
-    final list = [..._allLeads]
-      ..sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
+    var list = [..._allLeads]..sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
+    if (_statusFilter == 'new') {
+      list = list.where((lead) => !lead.isConverted).toList();
+    } else if (_statusFilter == 'contacted') {
+      list = list.where((lead) => lead.isConverted).toList();
+    }
     if (_search.trim().isEmpty) return list;
     final q = _search.trim().toLowerCase();
     return list.where((lead) {
@@ -319,221 +302,229 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   Widget build(BuildContext context) {
     final leads = _leads;
     final convertedCount = _allLeads.where((l) => l.isConverted).length;
-    final tapsCount = _allLeads.length - convertedCount;
-    final interactionSeries = _buildInteractionSeries(_allLeads);
+    final newCount = _allLeads.length - convertedCount;
+    final isDesktop = MediaQuery.of(context).size.width >= 980;
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          isDesktop ? 36 : 20,
+          isDesktop ? 34 : 24,
+          isDesktop ? 36 : 20,
+          44,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Taps',
+                        'Bandeja de leads',
                         style: GoogleFonts.outfit(
-                          fontSize: 28,
+                          fontSize: isDesktop ? 42 : 30,
                           fontWeight: FontWeight.w800,
                           color: context.textPrimary,
                           height: 1.0,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Timeline de acciones reales de cada contacto, ordenado por la actividad más reciente.',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 14,
-                      color: context.textMuted,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final isNarrow = constraints.maxWidth < 760;
-                      if (isNarrow) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              spacing: 16,
-                              runSpacing: 8,
-                              children: [
-                                _BigMetric(
-                                  label: 'Taps',
-                                  value: '$tapsCount',
-                                  color: context.textPrimary,
-                                ),
-                                _BigMetric(
-                                  label: 'Convertidos',
-                                  value: '$convertedCount',
-                                  color: AppColors.success,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            _InteractionSparkChart(values: interactionSeries),
-                          ],
-                        );
-                      }
-
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          _BigMetric(
-                            label: 'Taps',
-                            value: '$tapsCount',
-                            color: context.textPrimary,
-                          ),
-                          const SizedBox(width: 18),
-                          _BigMetric(
-                            label: 'Convertidos',
-                            value: '$convertedCount',
-                            color: AppColors.success,
-                          ),
-                          const SizedBox(width: 18),
-                          Expanded(
-                            child: _InteractionSparkChart(
-                              values: interactionSeries,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _searchCtrl,
-                    onChanged: (v) => setState(() => _search = v),
-                    inputFormatters: [LengthLimitingTextInputFormatter(200)],
-                    maxLength: 200,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      color: context.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Buscar por nombre o empresa...',
-                      hintStyle: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        color: context.textMuted,
-                      ),
-                      counterText: '',
-                      prefixIcon: Icon(
-                        Icons.search_rounded,
-                        size: 18,
-                        color: context.textMuted,
-                      ),
-                      suffixIcon: _search.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: const Icon(Icons.close_rounded, size: 18),
-                              color: context.textMuted,
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() => _search = '');
-                              },
-                            ),
-                      filled: true,
-                      fillColor: context.isDark
-                          ? Colors.white.withValues(alpha: 0.04)
-                          : Colors.white.withValues(alpha: 0.7),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: context.borderColor),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: context.borderColor),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: AppColors.primary,
-                          width: 1.4,
+                      const SizedBox(height: 10),
+                      Text(
+                        'Administra y filtra leads capturados por tu tarjeta.',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 15,
+                          color: context.textSecondary,
                         ),
                       ),
+                    ],
+                  ),
+                ),
+                if (isDesktop) const _LeadAudienceSelector(),
+              ],
+            ),
+            const SizedBox(height: 28),
+            if (isDesktop)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 360,
+                    child: Column(
+                      children: [
+                        _LeadSummaryPanel(
+                          total: _allLeads.length,
+                          newCount: newCount,
+                          contactedCount: convertedCount,
+                        ),
+                        const SizedBox(height: 22),
+                        _LeadFiltersPanel(
+                          statusFilter: _statusFilter,
+                          onStatusChanged: (value) =>
+                              setState(() => _statusFilter = value),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    child: _LeadInboxPanel(
+                      searchCtrl: _searchCtrl,
+                      search: _search,
+                      onSearchChanged: (v) => setState(() => _search = v),
+                      onClearSearch: () {
+                        _searchCtrl.clear();
+                        setState(() => _search = '');
+                      },
+                      statusFilter: _statusFilter,
+                      onStatusChanged: (value) =>
+                          setState(() => _statusFilter = value),
+                      leads: leads,
+                      totalCount: _allLeads.length,
+                      loading: _loading,
+                      onConverted: _markAsConverted,
+                    ),
+                  ),
                 ],
+              )
+            else ...[
+              _LeadSummaryPanel(
+                total: _allLeads.length,
+                newCount: newCount,
+                contactedCount: convertedCount,
               ),
+              const SizedBox(height: 18),
+              _LeadInboxPanel(
+                searchCtrl: _searchCtrl,
+                search: _search,
+                onSearchChanged: (v) => setState(() => _search = v),
+                onClearSearch: () {
+                  _searchCtrl.clear();
+                  setState(() => _search = '');
+                },
+                statusFilter: _statusFilter,
+                onStatusChanged: (value) =>
+                    setState(() => _statusFilter = value),
+                leads: leads,
+                totalCount: _allLeads.length,
+                loading: _loading,
+                onConverted: _markAsConverted,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeadAudienceSelector extends StatelessWidget {
+  const _LeadAudienceSelector();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: context.borderStrongSoft, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Todo',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
             ),
           ),
-          SliverToBoxAdapter(child: const SizedBox(height: 6)),
-          if (_loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (leads.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Text(
-                    'No hay interacciones para este filtro todavía.',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 14,
-                      color: context.textMuted,
-                    ),
-                  ),
-                ),
-              ),
-            )
-          else
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => _LeadTimelineCard(
-                  lead: leads[i],
-                  showDivider: i < leads.length - 1,
-                  onConverted: () => _markAsConverted(leads[i]),
-                ),
-                childCount: leads.length,
-              ),
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          const SizedBox(width: 28),
+          Icon(Icons.keyboard_arrow_down_rounded, color: context.textSecondary),
         ],
       ),
     );
   }
 }
 
-List<int> _buildInteractionSeries(List<LeadModel> leads) {
-  final now = DateTime.now();
-  final days = List<int>.filled(7, 0);
-  for (final lead in leads) {
-    for (final action in lead.actions) {
-      final diff = now.difference(action.timestamp).inDays;
-      if (diff >= 0 && diff < 7) {
-        final bucket = 6 - diff;
-        days[bucket] += 1;
-      }
-    }
+class _LeadSummaryPanel extends StatelessWidget {
+  final int total;
+  final int newCount;
+  final int contactedCount;
+
+  const _LeadSummaryPanel({
+    required this.total,
+    required this.newCount,
+    required this.contactedCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _LeadPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Resumen',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '$total',
+            style: GoogleFonts.outfit(
+              fontSize: 42,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+              height: 0.95,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Leads totales',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Divider(color: context.borderStrongSoft, height: 1),
+          const SizedBox(height: 20),
+          _LeadSummaryRow(
+            label: 'Nuevo',
+            value: newCount,
+            color: AppColors.primary,
+          ),
+          const SizedBox(height: 18),
+          _LeadSummaryRow(
+            label: 'Contactado',
+            value: contactedCount,
+            color: AppColors.success,
+          ),
+        ],
+      ),
+    );
   }
-  if (days.every((v) => v == 0)) {
-    for (var i = 0; i < days.length; i++) {
-      days[i] = i.isEven ? 1 : 2;
-    }
-  }
-  return days;
 }
 
-class _BigMetric extends StatelessWidget {
+class _LeadSummaryRow extends StatelessWidget {
   final String label;
-  final String value;
+  final int value;
   final Color color;
 
-  const _BigMetric({
+  const _LeadSummaryRow({
     required this.label,
     required this.value,
     required this.color,
@@ -542,28 +533,29 @@ class _BigMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(
-          value,
-          style: GoogleFonts.outfit(
-            fontSize: 40,
-            fontWeight: FontWeight.w900,
-            color: color,
-            height: 0.9,
-          ),
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 6),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 5),
+        const SizedBox(width: 14),
+        Expanded(
           child: Text(
             label,
             style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: context.textSecondary,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
             ),
+          ),
+        ),
+        Text(
+          '$value',
+          style: GoogleFonts.dmSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
           ),
         ),
       ],
@@ -571,42 +563,90 @@ class _BigMetric extends StatelessWidget {
   }
 }
 
-class _InteractionSparkChart extends StatelessWidget {
-  final List<int> values;
-  const _InteractionSparkChart({required this.values});
+class _LeadFiltersPanel extends StatelessWidget {
+  final String statusFilter;
+  final ValueChanged<String> onStatusChanged;
+
+  const _LeadFiltersPanel({
+    required this.statusFilter,
+    required this.onStatusChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final total = values.fold(0, (sum, value) => sum + value);
-    return Container(
-      height: 74,
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-      decoration: BoxDecoration(
-        color: context.isDark
-            ? Colors.white.withValues(alpha: 0.03)
-            : Colors.white.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(10),
-      ),
+    return _LeadPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Interacciones 7d · $total',
+            'Filtros',
             style: GoogleFonts.dmSans(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
               color: context.textSecondary,
             ),
           ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: CustomPaint(
-              painter: _SparklinePainter(
-                values: values,
-                lineColor: AppColors.primary,
-                fillColor: AppColors.primary.withValues(alpha: 0.12),
+          const SizedBox(height: 24),
+          Text(
+            'Estado',
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _LeadFilterSelect(
+            icon: Icons.filter_alt_outlined,
+            label: switch (statusFilter) {
+              'new' => 'Nuevo',
+              'contacted' => 'Contactado',
+              _ => 'Todos los estados',
+            },
+            onTap: () => onStatusChanged(
+              statusFilter == 'all'
+                  ? 'new'
+                  : statusFilter == 'new'
+                  ? 'contacted'
+                  : 'all',
+            ),
+          ),
+          const SizedBox(height: 22),
+          Text(
+            'Origen',
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _LeadFilterSelect(
+            icon: Icons.hub_outlined,
+            label: 'Todos los orígenes',
+            onTap: () {},
+          ),
+          const SizedBox(height: 24),
+          Divider(color: context.borderStrongSoft, height: 1),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => onStatusChanged('all'),
+              icon: const Icon(Icons.refresh_rounded, size: 17),
+              label: const Text('Limpiar filtros'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.textPrimary,
+                side: BorderSide(color: context.borderStrongSoft),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-              child: const SizedBox.expand(),
             ),
           ),
         ],
@@ -615,67 +655,567 @@ class _InteractionSparkChart extends StatelessWidget {
   }
 }
 
-class _SparklinePainter extends CustomPainter {
-  final List<int> values;
-  final Color lineColor;
-  final Color fillColor;
+class _LeadFilterSelect extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
 
-  const _SparklinePainter({
-    required this.values,
-    required this.lineColor,
-    required this.fillColor,
+  const _LeadFilterSelect({
+    required this.icon,
+    required this.label,
+    required this.onTap,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (values.isEmpty) return;
-
-    final maxVal = values.reduce((a, b) => a > b ? a : b).toDouble();
-    final minVal = values.reduce((a, b) => a < b ? a : b).toDouble();
-    final range = (maxVal - minVal).abs() < 0.001 ? 1.0 : maxVal - minVal;
-    final stepX = values.length == 1 ? 0.0 : size.width / (values.length - 1);
-
-    final points = <Offset>[];
-    for (var i = 0; i < values.length; i++) {
-      final normalized = (values[i] - minVal) / range;
-      final x = stepX * i;
-      final y = size.height - (normalized * (size.height - 2)) - 1;
-      points.add(Offset(x, y));
-    }
-
-    final linePath = Path()..moveTo(points.first.dx, points.first.dy);
-    for (var i = 1; i < points.length; i++) {
-      final prev = points[i - 1];
-      final curr = points[i];
-      final midX = (prev.dx + curr.dx) / 2;
-      linePath.cubicTo(midX, prev.dy, midX, curr.dy, curr.dx, curr.dy);
-    }
-
-    final areaPath = Path.from(linePath)
-      ..lineTo(points.last.dx, size.height)
-      ..lineTo(points.first.dx, size.height)
-      ..close();
-
-    final fillPaint = Paint()..color = fillColor;
-    canvas.drawPath(areaPath, fillPaint);
-
-    final linePaint = Paint()
-      ..color = lineColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(linePath, linePaint);
-
-    final dotPaint = Paint()..color = lineColor;
-    canvas.drawCircle(points.last, 3, dotPaint);
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: context.bgCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.primary, width: 1.2),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.primary, size: 20),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: context.textPrimary,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: context.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
+}
+
+class _LeadInboxPanel extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final String search;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
+  final String statusFilter;
+  final ValueChanged<String> onStatusChanged;
+  final List<LeadModel> leads;
+  final int totalCount;
+  final bool loading;
+  final ValueChanged<LeadModel> onConverted;
+
+  const _LeadInboxPanel({
+    required this.searchCtrl,
+    required this.search,
+    required this.onSearchChanged,
+    required this.onClearSearch,
+    required this.statusFilter,
+    required this.onStatusChanged,
+    required this.leads,
+    required this.totalCount,
+    required this.loading,
+    required this.onConverted,
+  });
 
   @override
-  bool shouldRepaint(covariant _SparklinePainter oldDelegate) {
-    return oldDelegate.values != values ||
-        oldDelegate.lineColor != lineColor ||
-        oldDelegate.fillColor != fillColor;
+  Widget build(BuildContext context) {
+    final searchField = TextField(
+      controller: searchCtrl,
+      onChanged: onSearchChanged,
+      inputFormatters: [LengthLimitingTextInputFormatter(200)],
+      maxLength: 200,
+      style: GoogleFonts.dmSans(fontSize: 14, color: context.textPrimary),
+      decoration: InputDecoration(
+        hintText: 'Buscar leads...',
+        hintStyle: GoogleFonts.dmSans(color: context.textMuted),
+        counterText: '',
+        prefixIcon: Icon(Icons.search_rounded, color: context.textPrimary),
+        suffixIcon: search.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: onClearSearch,
+              ),
+        filled: true,
+        fillColor: context.bgCard,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: context.borderStrongSoft),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: context.borderStrongSoft),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.3),
+        ),
+      ),
+    );
+
+    return _LeadPanel(
+      padding: const EdgeInsets.fromLTRB(28, 26, 28, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 720;
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    searchField,
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: _LeadToolbarButton(
+                            icon: Icons.calendar_today_outlined,
+                            label: 'Fechas',
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _LeadIconButton(icon: Icons.tune_rounded),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  const Spacer(),
+                  SizedBox(width: 360, child: searchField),
+                  const SizedBox(width: 14),
+                  const _LeadToolbarButton(
+                    icon: Icons.calendar_today_outlined,
+                    label: 'Fechas',
+                  ),
+                  const SizedBox(width: 10),
+                  _LeadIconButton(icon: Icons.tune_rounded),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: [
+              _LeadStatusTabs(value: statusFilter, onChanged: onStatusChanged),
+              const Spacer(),
+              Text(
+                'Ordenar por: ',
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: context.textSecondary,
+                ),
+              ),
+              Text(
+                'Recientes',
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: context.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 18),
+              Text(
+                '$totalCount total',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: context.textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (loading)
+            const SizedBox(
+              height: 260,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (leads.isEmpty)
+            SizedBox(
+              height: 260,
+              child: Center(
+                child: Text(
+                  'No hay leads para este filtro todavía.',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    color: context.textMuted,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...leads.asMap().entries.map(
+              (entry) => _LeadTimelineCard(
+                lead: entry.value,
+                showDivider: false,
+                onConverted: () => onConverted(entry.value),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadStatusTabs extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  const _LeadStatusTabs({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _LeadStatusTab(
+          label: 'Todos',
+          value: 'all',
+          selected: value == 'all',
+          onTap: onChanged,
+        ),
+        _LeadStatusTab(
+          label: 'Nuevo',
+          value: 'new',
+          selected: value == 'new',
+          onTap: onChanged,
+        ),
+        _LeadStatusTab(
+          label: 'Contactado',
+          value: 'contacted',
+          selected: value == 'contacted',
+          onTap: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _LeadStatusTab extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool selected;
+  final ValueChanged<String> onTap;
+
+  const _LeadStatusTab({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onTap(value),
+      child: Padding(
+        padding: const EdgeInsets.only(right: 30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: selected ? AppColors.primary : context.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: 54,
+              height: 3,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeadToolbarButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _LeadToolbarButton({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Icon(icon, size: 18, color: context.textSecondary),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadIconButton extends StatelessWidget {
+  final IconData icon;
+
+  const _LeadIconButton({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Icon(icon, color: context.textSecondary),
+    );
+  }
+}
+
+class _LeadPanel extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  const _LeadPanel({
+    required this.child,
+    this.padding = const EdgeInsets.all(28),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: child,
+    );
+  }
+}
+
+String _leadInitials(LeadModel lead) {
+  final name = lead.displayName.trim();
+  if (name.isEmpty) return '?';
+  final parts = name.split(RegExp(r'\s+'));
+  if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  return name[0].toUpperCase();
+}
+
+String? _leadFormValue(LeadModel lead, String kind) {
+  final data = lead.formData;
+  if (data == null) return null;
+  for (final entry in data.entries) {
+    final key = entry.key.toLowerCase();
+    final value = (entry.value ?? '').toString().trim();
+    if (value.isEmpty) continue;
+    if (kind == 'email' &&
+        (key.contains('email') ||
+            key.contains('correo') ||
+            value.contains('@'))) {
+      return value;
+    }
+    if (kind == 'phone' &&
+        (key.contains('phone') ||
+            key.contains('telefono') ||
+            key.contains('teléfono') ||
+            key.contains('whatsapp') ||
+            RegExp(r'\+?\d[\d\s\-\(\)]{7,}').hasMatch(value))) {
+      return value;
+    }
+  }
+  return null;
+}
+
+class _LeadAvatar extends StatelessWidget {
+  final LeadModel lead;
+
+  const _LeadAvatar({required this.lead});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = lead.avatarUrl?.trim();
+    final hasImage = url != null && url.isNotEmpty;
+    return Container(
+      width: 58,
+      height: 58,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: lead.isConverted ? AppColors.success : AppColors.primary,
+        shape: BoxShape.circle,
+        image: hasImage
+            ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover)
+            : null,
+      ),
+      child: hasImage
+          ? null
+          : Text(
+              _leadInitials(lead),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+    );
+  }
+}
+
+class _LeadInlineFact extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _LeadInlineFact({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: context.textSecondary),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: context.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LeadBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData? icon;
+  final bool subtle;
+
+  const _LeadBadge({
+    required this.label,
+    required this.color,
+    this.icon,
+    this.subtle = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = subtle
+        ? context.textSecondary.withValues(alpha: 0.78)
+        : color.withValues(alpha: 0.9);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 13, color: foreground),
+          const SizedBox(width: 5),
+        ],
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: foreground,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LeadContactButton extends StatelessWidget {
+  final bool contacted;
+  final VoidCallback onTap;
+
+  const _LeadContactButton({required this.contacted, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = contacted ? AppColors.success : const Color(0xFF64748B);
+    final bgColor = contacted
+        ? AppColors.success.withValues(alpha: 0.1)
+        : const Color(0xFFF3F5F8);
+    final borderColor = contacted
+        ? AppColors.success.withValues(alpha: 0.22)
+        : context.borderStrongSoft;
+
+    return MouseRegion(
+      cursor: contacted ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: contacted ? null : onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                contacted ? Icons.check_circle_rounded : Icons.schedule_rounded,
+                size: 16,
+                color: color,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                contacted ? 'Contactado' : 'Pendiente',
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -707,71 +1247,139 @@ class _LeadTimelineCardState extends State<_LeadTimelineCard> {
         ? timeline
         : timeline.take(4).toList();
     final hasMoreTimeline = timeline.length > 4;
+    final hasFormData = lead.formData != null && lead.formData!.isNotEmpty;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          color: context.isDark
-              ? Colors.white.withValues(alpha: 0.03)
-              : Colors.white.withValues(alpha: 0.62),
-          borderRadius: BorderRadius.circular(14),
+          color: context.bgCard,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: context.borderStrongSoft, width: 1.1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _LeadAvatar(lead: lead),
+                      const SizedBox(width: 18),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              lead.displayName,
-                              style: GoogleFonts.outfit(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: context.textPrimary,
-                              ),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    lead.displayName,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      color: context.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                if (hasFormData) ...[
+                                  const SizedBox(width: 12),
+                                  _FormEventButton(
+                                    formData: lead.formData!,
+                                    formType: lead.formType,
+                                    label: 'Ver info',
+                                  ),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              [
-                                if (lead.company != null &&
-                                    lead.company!.isNotEmpty)
-                                  lead.company!,
-                                'Último: ${_fmtDate(lead.lastSeen)}',
-                              ].join(' · '),
+                              lead.company?.trim().isNotEmpty == true
+                                  ? lead.company!
+                                  : 'Empresa no disponible',
                               style: GoogleFonts.dmSans(
-                                fontSize: 12,
-                                color: context.textSecondary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: context.textPrimary,
                               ),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 8,
+                              children: [
+                                if (_leadFormValue(lead, 'email') != null)
+                                  _LeadInlineFact(
+                                    icon: Icons.email_outlined,
+                                    label: _leadFormValue(lead, 'email')!,
+                                  ),
+                                if (_leadFormValue(lead, 'phone') != null)
+                                  _LeadInlineFact(
+                                    icon: Icons.phone_outlined,
+                                    label: _leadFormValue(lead, 'phone')!,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _LeadBadge(
+                                  label: lead.isConverted
+                                      ? 'Contactado'
+                                      : 'Pendiente',
+                                  color: lead.isConverted
+                                      ? AppColors.success
+                                      : const Color(0xFF64748B),
+                                  icon: lead.isConverted
+                                      ? Icons.check_circle_rounded
+                                      : Icons.schedule_rounded,
+                                  subtle: !lead.isConverted,
+                                ),
+                                _LeadBadge(
+                                  label: 'Origen: link público',
+                                  color: context.textSecondary,
+                                  subtle: true,
+                                ),
+                                _LeadBadge(
+                                  label: _fmtDay(lead.firstSeen),
+                                  color: context.textSecondary,
+                                  icon: Icons.schedule_rounded,
+                                  subtle: true,
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Text(
-                        'Timeline',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: context.textPrimary,
-                        ),
+                      const SizedBox(width: 18),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _fmtDay(lead.lastSeen),
+                            style: GoogleFonts.dmSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: context.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _LeadContactButton(
+                            contacted: lead.isConverted,
+                            onTap: widget.onConverted,
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 20),
                   ...visibleTimeline.asMap().entries.map((entry) {
                     final i = entry.key;
                     final ev = entry.value;
@@ -804,56 +1412,6 @@ class _LeadTimelineCardState extends State<_LeadTimelineCard> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 10),
-                  if (!lead.isConverted)
-                    MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: GestureDetector(
-                        onTap: widget.onConverted,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.isDark
-                                ? const Color(0xFF16A34A).withValues(alpha: 0.1)
-                                : const Color(
-                                    0xFF16A34A,
-                                  ).withValues(alpha: 0.04),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.attach_money_rounded,
-                                size: 14,
-                                color: const Color(0xFF16A34A),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Marcar como venta',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF16A34A),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    Text(
-                      'Venta confirmada',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.success,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -984,8 +1542,13 @@ class _TimelineEventRow extends StatelessWidget {
 class _FormEventButton extends StatelessWidget {
   final Map<String, dynamic> formData;
   final String? formType;
+  final String label;
 
-  const _FormEventButton({required this.formData, this.formType});
+  const _FormEventButton({
+    required this.formData,
+    this.formType,
+    this.label = 'Ver formulario',
+  });
 
   Future<void> _launch(BuildContext context, String url) async {
     final uri = Uri.parse(url);
@@ -1000,10 +1563,9 @@ class _FormEventButton extends StatelessWidget {
   Future<void> _saveLeadSummary(BuildContext context) async {
     final buffer = StringBuffer();
     buffer.writeln('Formulario: ${_formTitle(formType)}');
-    for (final entry in formData.entries) {
+    for (final entry in _visibleFormEntries(formData)) {
       final key = entry.key;
-      final value = (entry.value ?? '').toString().trim();
-      if (key.startsWith('_') || value.isEmpty) continue;
+      final value = entry.value;
       buffer.writeln('$key: $value');
     }
     await Clipboard.setData(ClipboardData(text: buffer.toString()));
@@ -1043,64 +1605,151 @@ class _FormEventButton extends StatelessWidget {
     }
   }
 
+  String _displayValue(Object? raw) {
+    if (raw == null) return '';
+    if (raw is String) return raw.trim();
+    if (raw is Iterable) {
+      return raw
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .join(', ');
+    }
+    if (raw is Map) return raw.values.map((item) => item.toString()).join(', ');
+    return raw.toString().trim();
+  }
+
+  String _fieldIdentity(String key, String value) {
+    final lowerKey = key.toLowerCase();
+    if (_isEmailField(key, value)) return 'email';
+    if (_isPhoneField(key, value)) return 'phone';
+    if (lowerKey.contains('nombre') || lowerKey.contains('name')) return 'name';
+    if (lowerKey.contains('mensaje') || lowerKey.contains('message')) {
+      return 'message';
+    }
+    if (lowerKey.contains('empresa') || lowerKey.contains('company')) {
+      return 'company';
+    }
+    if (lowerKey.contains('presupuesto') || lowerKey.contains('budget')) {
+      return 'budget';
+    }
+    if (lowerKey.contains('fecha') || lowerKey.contains('date')) return 'date';
+    return lowerKey.trim();
+  }
+
+  IconData _fieldIcon(String identity) {
+    switch (identity) {
+      case 'email':
+        return Icons.mail_outline_rounded;
+      case 'phone':
+        return Icons.phone_outlined;
+      case 'name':
+        return Icons.person_outline_rounded;
+      case 'message':
+        return Icons.chat_bubble_outline_rounded;
+      case 'company':
+        return Icons.business_outlined;
+      case 'budget':
+        return Icons.payments_outlined;
+      case 'date':
+        return Icons.calendar_month_outlined;
+      default:
+        return Icons.short_text_rounded;
+    }
+  }
+
+  List<MapEntry<String, String>> _visibleFormEntries(
+    Map<String, dynamic> data,
+  ) {
+    final seen = <String>{};
+    final entries = <MapEntry<String, String>>[];
+    for (final entry in data.entries) {
+      if (entry.key.startsWith('_')) continue;
+      final value = _displayValue(entry.value);
+      if (value.isEmpty) continue;
+      final identity = _fieldIdentity(entry.key, value);
+      if (!seen.add(identity)) continue;
+      entries.add(MapEntry(entry.key, value));
+    }
+    return entries;
+  }
+
   void _show(BuildContext context) {
+    final entries = _visibleFormEntries(formData);
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: ctx.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.assignment_ind_outlined,
-                      size: 22,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _formTitle(formType),
-                        style: GoogleFonts.outfit(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: ctx.textPrimary,
+          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+          child: Container(
+            decoration: BoxDecoration(
+              color: ctx.bgCard,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 26, 22, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.assignment_ind_outlined,
+                        size: 38,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _formTitle(formType),
+                              style: GoogleFonts.outfit(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                                color: ctx.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Información enviada desde el perfil público.',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 15,
+                                color: ctx.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                      color: ctx.textMuted,
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 28),
+                        color: ctx.textPrimary,
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                child: Divider(color: ctx.borderColor, height: 1),
-              ),
-              Flexible(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                  shrinkWrap: true,
-                  children: [
-                    for (final entry in formData.entries)
-                      if (!(entry.key.startsWith('_')) &&
-                          ((entry.value as String?)?.isNotEmpty ?? false))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 22, 30, 0),
+                  child: Divider(color: ctx.borderStrongSoft, height: 1),
+                ),
+                Flexible(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(30, 22, 30, 26),
+                    shrinkWrap: true,
+                    children: [
+                      for (final entry in entries)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.only(bottom: 12),
                           child: Builder(
                             builder: (_) {
                               final key = entry.key;
-                              final value = (entry.value ?? '') as String;
+                              final value = entry.value;
+                              final identity = _fieldIdentity(key, value);
                               final isEmail = _isEmailField(key, value);
                               final isPhone = _isPhoneField(key, value);
                               final cleanPhone = value.replaceAll(
@@ -1108,97 +1757,130 @@ class _FormEventButton extends StatelessWidget {
                                 '',
                               );
 
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          key,
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: ctx.textMuted,
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ),
-                                      if (isEmail)
-                                        _FieldCornerAction(
-                                          icon: Icons.alternate_email_rounded,
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 13,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: ctx.borderStrongSoft,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          _fieldIcon(identity),
+                                          size: 22,
                                           color: AppColors.primary,
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                key,
+                                                style: GoogleFonts.dmSans(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: ctx.textSecondary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                value,
+                                                style: GoogleFonts.dmSans(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: ctx.textPrimary,
+                                                  height: 1.25,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (isEmail)
+                                          _FieldCornerAction(
+                                            icon: Icons.alternate_email_rounded,
+                                            color: AppColors.primary,
+                                            onTap: () => _launch(
+                                              context,
+                                              'mailto:$value',
+                                            ),
+                                          ),
+                                        if (isPhone)
+                                          _FieldCornerAction(
+                                            icon: Icons.call_outlined,
+                                            color: const Color(0xFF16A34A),
+                                            onTap: () => _launch(
+                                              context,
+                                              'tel:$cleanPhone',
+                                            ),
+                                          ),
+                                        if (isPhone)
+                                          _FieldCornerAction(
+                                            icon: Icons
+                                                .chat_bubble_outline_rounded,
+                                            color: const Color(0xFF16A34A),
+                                            onTap: () => _launch(
+                                              context,
+                                              'https://wa.me/$cleanPhone',
+                                            ),
+                                          ),
+                                        _FieldCornerAction(
+                                          icon: Icons.content_copy_rounded,
+                                          color: context.textSecondary,
                                           onTap: () =>
-                                              _launch(context, 'mailto:$value'),
+                                              _copyField(context, value),
                                         ),
-                                      if (isPhone)
-                                        _FieldCornerAction(
-                                          icon: Icons.call_outlined,
-                                          color: const Color(0xFF16A34A),
-                                          onTap: () => _launch(
-                                            context,
-                                            'tel:$cleanPhone',
-                                          ),
-                                        ),
-                                      if (isPhone)
-                                        _FieldCornerAction(
-                                          icon:
-                                              Icons.chat_bubble_outline_rounded,
-                                          color: const Color(0xFF16A34A),
-                                          onTap: () => _launch(
-                                            context,
-                                            'https://wa.me/$cleanPhone',
-                                          ),
-                                        ),
-                                      _FieldCornerAction(
-                                        icon: Icons.content_copy_rounded,
-                                        color: context.textSecondary,
-                                        onTap: () => _copyField(context, value),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 10,
+                                      ],
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: ctx.bgSubtle,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: ctx.borderColor,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      value,
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        color: ctx.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               );
                             },
                           ),
                         ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _DialogPrimaryAction(
-                    icon: Icons.save_alt_rounded,
-                    label: 'Guardar contacto',
-                    onTap: () => _saveLeadSummary(context),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                Divider(color: ctx.borderStrongSoft, height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 16, 30, 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'Cerrar',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      _DialogPrimaryAction(
+                        icon: Icons.save_alt_rounded,
+                        label: 'Guardar contacto',
+                        onTap: () => _saveLeadSummary(context),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1229,7 +1911,7 @@ class _FormEventButton extends StatelessWidget {
               ),
               const SizedBox(width: 5),
               Text(
-                'Ver formulario',
+                label,
                 style: GoogleFonts.dmSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -1262,24 +1944,22 @@ class _DialogPrimaryAction extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
           decoration: BoxDecoration(
-            color: context.isDark
-                ? AppColors.primary.withValues(alpha: 0.1)
-                : AppColors.primary.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(8),
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 13, color: AppColors.primary),
-              const SizedBox(width: 5),
+              Icon(icon, size: 18, color: Colors.white),
+              const SizedBox(width: 8),
               Text(
                 label,
                 style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
                 ),
               ),
             ],
@@ -1309,16 +1989,10 @@ class _FieldCornerAction extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           onTap: onTap,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: context.isDark
-                  ? color.withValues(alpha: 0.1)
-                  : color.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Icon(icon, size: 13, color: color),
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: Icon(icon, size: 18, color: color),
           ),
         ),
       ),

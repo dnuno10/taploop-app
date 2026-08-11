@@ -162,19 +162,10 @@ class AnalyticsRepository {
   // ─── Record a visit (fire-and-forget) ────────────────────────────────────
 
   /// source: 'nfc' | 'qr' | 'link'
-  static Future<void> recordVisit(
-    String cardId,
-    String source, {
-    String? campaignId,
-  }) async {
+  static Future<void> recordVisit(String cardId, String source) async {
     try {
       final info = await collectVisitorInfo();
-      await _recordCardVisit(
-        cardId: cardId,
-        source: source,
-        campaignId: campaignId,
-        info: info,
-      );
+      await _recordCardVisit(cardId: cardId, source: source, info: info);
     } catch (e) {
       debugPrint('[Analytics] recordVisit error: $e');
     }
@@ -187,7 +178,6 @@ class AnalyticsRepository {
   static Future<void> recordInteraction({
     required String cardId,
     required String source,
-    String? campaignId,
     String? contactItemId,
     String? socialLinkId,
     String? smartFormId,
@@ -197,7 +187,6 @@ class AnalyticsRepository {
       await _recordCardVisit(
         cardId: cardId,
         source: source,
-        campaignId: campaignId,
         contactItemId: contactItemId,
         socialLinkId: socialLinkId,
         smartFormId: smartFormId,
@@ -211,16 +200,11 @@ class AnalyticsRepository {
   static Future<void> _recordCardVisit({
     required String cardId,
     required String source,
-    String? campaignId,
     String? contactItemId,
     String? socialLinkId,
     String? smartFormId,
     required Map<String, String?> info,
   }) async {
-    final resolvedCampaignId = await resolveCampaignIdForCard(
-      cardId: cardId,
-      preferredCampaignId: campaignId,
-    );
     Object? lastError;
     final attempts = <Map<String, dynamic>>[
       {
@@ -230,7 +214,6 @@ class AnalyticsRepository {
         'p_ip': info['ip'],
         'p_city': info['city'],
         'p_country': info['country'],
-        'p_campaign_id': resolvedCampaignId,
         'p_contact_item_id': contactItemId,
         'p_social_link_id': socialLinkId,
         'p_smart_form_id': smartFormId,
@@ -242,7 +225,6 @@ class AnalyticsRepository {
         'p_ip': info['ip'],
         'p_city': info['city'],
         'p_country': info['country'],
-        'p_campaign_id': resolvedCampaignId,
         'p_contact_item_id': null,
         'p_social_link_id': null,
         'p_smart_form_id': null,
@@ -261,107 +243,6 @@ class AnalyticsRepository {
     throw Exception(
       'record_card_visit failed for source=$source card=$cardId: $lastError',
     );
-  }
-
-  static Future<String?> resolveCampaignIdForCard({
-    required String cardId,
-    String? preferredCampaignId,
-  }) async {
-    final userId = await _resolveCardUserId(cardId);
-    if (userId == null || userId.isEmpty) return null;
-
-    final explicitCampaignId = preferredCampaignId?.trim();
-    if (explicitCampaignId != null && explicitCampaignId.isNotEmpty) {
-      final allowed = await _campaignBelongsToUser(
-        campaignId: explicitCampaignId,
-        userId: userId,
-      );
-      if (allowed) return explicitCampaignId;
-    }
-
-    return _resolveActiveCampaignIdForUser(userId);
-  }
-
-  static Future<String?> _resolveCardUserId(String cardId) async {
-    try {
-      final cardRows = await _db
-          .from('digital_cards')
-          .select('user_id')
-          .eq('id', cardId)
-          .limit(1);
-      if ((cardRows as List).isEmpty) return null;
-
-      return cardRows.first['user_id'] as String?;
-    } catch (error) {
-      debugPrint(
-        '[Analytics] resolve card user error for card=$cardId: $error',
-      );
-      return null;
-    }
-  }
-
-  static Future<bool> _campaignBelongsToUser({
-    required String campaignId,
-    required String userId,
-  }) async {
-    try {
-      final memberRows = await _db
-          .from('campaign_members')
-          .select('campaign_id')
-          .eq('user_id', userId);
-      return memberRows.cast<Map<String, dynamic>>().any(
-        (row) => row['campaign_id'] == campaignId,
-      );
-    } catch (error) {
-      debugPrint(
-        '[Analytics] validate campaign membership error for user=$userId campaign=$campaignId: $error',
-      );
-      return false;
-    }
-  }
-
-  static Future<String?> _resolveActiveCampaignIdForUser(String userId) async {
-    try {
-      final memberRows = await _db
-          .from('campaign_members')
-          .select('campaign_id')
-          .eq('user_id', userId);
-      final campaignIds = memberRows
-          .cast<Map<String, dynamic>>()
-          .map((row) => row['campaign_id'] as String?)
-          .whereType<String>()
-          .where((id) => id.trim().isNotEmpty)
-          .toSet()
-          .toList();
-      if (campaignIds.isEmpty) return null;
-
-      final campaignRows = await _db
-          .from('campaigns')
-          .select('id, starts_at, ends_at')
-          .inFilter('id', campaignIds);
-
-      final now = DateTime.now();
-      final activeCampaigns =
-          campaignRows
-              .cast<Map<String, dynamic>>()
-              .map(_ActiveCampaignWindow.fromJson)
-              .where(
-                (campaign) =>
-                    campaign.startsAt != null &&
-                    campaign.endsAt != null &&
-                    !now.isBefore(campaign.startsAt!) &&
-                    !now.isAfter(campaign.endsAt!),
-              )
-              .toList()
-            ..sort((a, b) => b.startsAt!.compareTo(a.startsAt!));
-
-      return activeCampaigns.isEmpty ? null : activeCampaigns.first.id;
-    } catch (error) {
-      debugPrint(
-        '[Analytics] resolve active campaign error for user=$userId: $error',
-      );
-      return null;
-    }
   }
 
   // ─── Recent visit events (last N) ────────────────────────────────────────
@@ -522,31 +403,4 @@ class AnalyticsRepository {
 
     return resolved;
   }
-}
-
-class _ActiveCampaignWindow {
-  final String id;
-  final DateTime? startsAt;
-  final DateTime? endsAt;
-
-  const _ActiveCampaignWindow({
-    required this.id,
-    required this.startsAt,
-    required this.endsAt,
-  });
-
-  factory _ActiveCampaignWindow.fromJson(Map<String, dynamic> json) {
-    return _ActiveCampaignWindow(
-      id: json['id'] as String? ?? '',
-      startsAt: _parseTimestamp(json['starts_at']),
-      endsAt: _parseTimestamp(json['ends_at']),
-    );
-  }
-}
-
-DateTime? _parseTimestamp(dynamic value) {
-  if (value == null) return null;
-  final raw = value.toString().trim();
-  if (raw.isEmpty) return null;
-  return DateTime.tryParse(raw)?.toLocal();
 }

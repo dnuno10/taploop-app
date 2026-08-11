@@ -97,15 +97,6 @@ class MetricsRealtimeSubscription {
       .._watchTable(table: 'leads')
       .._watchTable(table: 'lead_actions')
       .._watchTable(
-        table: 'campaigns',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'org_id',
-          value: orgId,
-        ),
-      )
-      .._watchTable(table: 'campaign_members')
-      .._watchTable(
         table: 'users',
         filter: PostgresChangeFilter(
           type: PostgresChangeFilterType.eq,

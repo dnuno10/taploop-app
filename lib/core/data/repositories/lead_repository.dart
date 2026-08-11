@@ -491,19 +491,13 @@ class LeadRepository {
     required String cardId,
     required String formType,
     required String name,
-    String? campaignId,
     String? email,
     String? phone,
     String? company,
     required Map<String, String> formData,
   }) async {
-    final resolvedCampaignId =
-        await AnalyticsRepository.resolveCampaignIdForCard(
-          cardId: cardId,
-          preferredCampaignId: campaignId,
-        );
     final errors = <String>[];
-    final baseAttempts = <Map<String, dynamic>>[
+    final attempts = <Map<String, dynamic>>[
       {
         'p_card_id': cardId,
         'p_form_id': formType,
@@ -523,25 +517,10 @@ class LeadRepository {
         'p_form_data': formData,
       },
     ];
-    final attempts = <Map<String, dynamic>>[
-      if (resolvedCampaignId != null && resolvedCampaignId.isNotEmpty)
-        ...baseAttempts.map(
-          (params) => {...params, 'p_campaign_id': resolvedCampaignId},
-        ),
-      ...baseAttempts,
-    ];
 
     for (final params in attempts) {
       try {
         await _db.rpc('submit_card_form', params: params);
-        if (resolvedCampaignId != null && resolvedCampaignId.isNotEmpty) {
-          await _ensureLeadCampaignAttribution(
-            cardId: cardId,
-            formType: formType,
-            leadName: name,
-            campaignId: resolvedCampaignId,
-          );
-        }
         return;
       } catch (error) {
         errors.add('params=${params.keys.join(",")}: $error');
@@ -551,61 +530,5 @@ class LeadRepository {
     final message = 'submit_card_form failed: ${errors.join(' | ')}';
     debugPrint('[LeadRepository] $message');
     throw Exception(message);
-  }
-
-  static Future<void> _ensureLeadCampaignAttribution({
-    required String cardId,
-    required String formType,
-    required String leadName,
-    required String campaignId,
-  }) async {
-    try {
-      final rows = await _db
-          .from('leads')
-          .select('id, campaign_id, form_type, name, last_seen')
-          .eq('card_id', cardId)
-          .order('last_seen', ascending: false)
-          .limit(8);
-
-      final now = DateTime.now();
-      for (final row in (rows as List).cast<Map<String, dynamic>>()) {
-        final leadId = row['id'] as String?;
-        if (leadId == null || leadId.isEmpty) continue;
-        final currentCampaignId = row['campaign_id'] as String?;
-        if (currentCampaignId != null && currentCampaignId.trim().isNotEmpty) {
-          continue;
-        }
-        final rowFormType = (row['form_type'] as String?)?.trim();
-        if (rowFormType != null &&
-            rowFormType.isNotEmpty &&
-            rowFormType != formType) {
-          continue;
-        }
-        final rowName = (row['name'] as String?)?.trim();
-        if (leadName.trim().isNotEmpty &&
-            rowName != null &&
-            rowName.isNotEmpty &&
-            rowName != leadName.trim()) {
-          continue;
-        }
-        final lastSeenRaw = row['last_seen'] as String?;
-        final lastSeen = lastSeenRaw == null
-            ? null
-            : DateTime.tryParse(lastSeenRaw)?.toLocal();
-        if (lastSeen != null &&
-            now.difference(lastSeen).abs() > const Duration(minutes: 10)) {
-          continue;
-        }
-        await _db
-            .from('leads')
-            .update({'campaign_id': campaignId})
-            .eq('id', leadId);
-        return;
-      }
-    } catch (error) {
-      debugPrint(
-        '[LeadRepository] ensure lead campaign attribution error for card=$cardId form=$formType: $error',
-      );
-    }
   }
 }

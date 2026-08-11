@@ -59,7 +59,7 @@ class ContactItemModel {
       case ContactType.whatsapp:
         return 'WhatsApp';
       case ContactType.email:
-        return 'Email';
+        return 'Correo';
       case ContactType.address:
         return 'Dirección';
       case ContactType.website:

@@ -17,6 +17,131 @@ SmartFormFieldType _fieldTypeFromString(String s) {
   }
 }
 
+enum SmartFormIncludedField {
+  name,
+  email,
+  phone,
+  company,
+  message,
+  budget,
+  date,
+}
+
+SmartFormIncludedField? _includedFieldFromString(String? value) {
+  return switch (value) {
+    'name' => SmartFormIncludedField.name,
+    'email' => SmartFormIncludedField.email,
+    'phone' => SmartFormIncludedField.phone,
+    'company' => SmartFormIncludedField.company,
+    'message' => SmartFormIncludedField.message,
+    'budget' => SmartFormIncludedField.budget,
+    'date' => SmartFormIncludedField.date,
+    _ => null,
+  };
+}
+
+extension SmartFormIncludedFieldX on SmartFormIncludedField {
+  String get label => switch (this) {
+    SmartFormIncludedField.name => 'Nombre',
+    SmartFormIncludedField.email => 'Email',
+    SmartFormIncludedField.phone => 'Teléfono',
+    SmartFormIncludedField.company => 'Empresa',
+    SmartFormIncludedField.message => 'Mensaje',
+    SmartFormIncludedField.budget => 'Presupuesto',
+    SmartFormIncludedField.date => 'Fecha',
+  };
+
+  String get placeholder => switch (this) {
+    SmartFormIncludedField.name => 'Tu nombre',
+    SmartFormIncludedField.email => 'tu@email.com',
+    SmartFormIncludedField.phone => '+52 000 000 0000',
+    SmartFormIncludedField.company => 'Empresa',
+    SmartFormIncludedField.message => 'Cuéntanos qué necesitas',
+    SmartFormIncludedField.budget => 'Presupuesto estimado',
+    SmartFormIncludedField.date => 'Fecha deseada',
+  };
+
+  SmartFormFieldType get fieldType => switch (this) {
+    SmartFormIncludedField.email => SmartFormFieldType.email,
+    SmartFormIncludedField.phone => SmartFormFieldType.phone,
+    SmartFormIncludedField.message => SmartFormFieldType.textarea,
+    SmartFormIncludedField.budget => SmartFormFieldType.number,
+    SmartFormIncludedField.name ||
+    SmartFormIncludedField.company ||
+    SmartFormIncludedField.date => SmartFormFieldType.text,
+  };
+}
+
+const List<SmartFormIncludedField> smartFormIncludedFieldOrder = [
+  SmartFormIncludedField.name,
+  SmartFormIncludedField.email,
+  SmartFormIncludedField.phone,
+  SmartFormIncludedField.company,
+  SmartFormIncludedField.message,
+  SmartFormIncludedField.budget,
+  SmartFormIncludedField.date,
+];
+
+List<SmartFormIncludedField> _includedFieldsFromJson(
+  Object? raw,
+  List<SmartFormFieldModel> legacyFields,
+) {
+  final parsed = raw is List
+      ? raw
+            .map((value) => _includedFieldFromString(value as String?))
+            .whereType<SmartFormIncludedField>()
+            .toSet()
+      : <SmartFormIncludedField>{};
+  if (parsed.isNotEmpty) {
+    return smartFormIncludedFieldOrder
+        .where((field) => parsed.contains(field))
+        .toList();
+  }
+
+  final legacy = <SmartFormIncludedField>{};
+  for (final field in legacyFields) {
+    final normalized = field.label.toLowerCase();
+    if (normalized.contains('nombre')) legacy.add(SmartFormIncludedField.name);
+    if (normalized.contains('mail') || normalized.contains('correo')) {
+      legacy.add(SmartFormIncludedField.email);
+    }
+    if (normalized.contains('tel') || normalized.contains('cel')) {
+      legacy.add(SmartFormIncludedField.phone);
+    }
+    if (normalized.contains('empresa')) {
+      legacy.add(SmartFormIncludedField.company);
+    }
+    if (normalized.contains('mensaje')) {
+      legacy.add(SmartFormIncludedField.message);
+    }
+    if (normalized.contains('presupuesto')) {
+      legacy.add(SmartFormIncludedField.budget);
+    }
+    if (normalized.contains('fecha')) legacy.add(SmartFormIncludedField.date);
+  }
+  return smartFormIncludedFieldOrder
+      .where((field) => legacy.contains(field))
+      .toList();
+}
+
+List<SmartFormFieldModel> _fieldsFromIncludedFields(
+  String formId,
+  List<SmartFormIncludedField> includedFields,
+) {
+  return includedFields.asMap().entries.map((entry) {
+    final field = entry.value;
+    return SmartFormFieldModel(
+      id: '${formId}_${field.name}',
+      formId: formId,
+      fieldType: field.fieldType,
+      label: field.label,
+      placeholder: field.placeholder,
+      isRequired: true,
+      sortOrder: entry.key,
+    );
+  }).toList();
+}
+
 class SmartFormFieldModel {
   final String id;
   final String formId;
@@ -88,14 +213,20 @@ class SmartFormModel {
   final String id;
   final String cardId;
   final String name;
+  final String? description;
+  final String successMessage;
   final bool isActive;
+  final List<SmartFormIncludedField> includedFields;
   final List<SmartFormFieldModel> fields;
 
   const SmartFormModel({
     required this.id,
     required this.cardId,
     required this.name,
+    this.description,
+    this.successMessage = 'Gracias, recibimos tu información.',
     this.isActive = true,
+    this.includedFields = const [],
     this.fields = const [],
   });
 
@@ -103,18 +234,33 @@ class SmartFormModel {
     Map<String, dynamic> json, {
     List<SmartFormFieldModel> fields = const [],
   }) {
+    final includedFields = _includedFieldsFromJson(
+      json['included_fields'],
+      fields,
+    );
+    final resolvedFields = includedFields.isNotEmpty
+        ? _fieldsFromIncludedFields(json['id'] as String, includedFields)
+        : fields;
     return SmartFormModel(
       id: json['id'] as String,
       cardId: json['card_id'] as String,
       name: json['name'] as String? ?? 'Formulario',
+      description: json['description'] as String?,
+      successMessage:
+          json['success_message'] as String? ??
+          'Gracias, recibimos tu información.',
       isActive: json['is_active'] as bool? ?? true,
-      fields: fields,
+      includedFields: includedFields,
+      fields: resolvedFields,
     );
   }
 
   Map<String, dynamic> toJson({String? cardId}) => {
     if (cardId != null) 'card_id': cardId,
     'name': name,
+    'description': description,
+    'success_message': successMessage,
+    'included_fields': includedFields.map((field) => field.name).toList(),
     'is_active': isActive,
   };
 
@@ -122,15 +268,23 @@ class SmartFormModel {
     String? id,
     String? cardId,
     String? name,
+    String? description,
+    String? successMessage,
     bool? isActive,
+    List<SmartFormIncludedField>? includedFields,
     List<SmartFormFieldModel>? fields,
   }) {
+    final nextIncludedFields = includedFields ?? this.includedFields;
+    final nextId = id ?? this.id;
     return SmartFormModel(
-      id: id ?? this.id,
+      id: nextId,
       cardId: cardId ?? this.cardId,
       name: name ?? this.name,
+      description: description ?? this.description,
+      successMessage: successMessage ?? this.successMessage,
       isActive: isActive ?? this.isActive,
-      fields: fields ?? this.fields,
+      includedFields: nextIncludedFields,
+      fields: fields ?? _fieldsFromIncludedFields(nextId, nextIncludedFields),
     );
   }
 }

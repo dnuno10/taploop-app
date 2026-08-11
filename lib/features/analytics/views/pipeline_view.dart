@@ -859,10 +859,9 @@ class _FormDataButton extends StatelessWidget {
     final buffer = StringBuffer();
     buffer.writeln('Lead: ${lead.displayName}');
     buffer.writeln('Formulario: ${_formTitle(lead.formType)}');
-    for (final entry in data.entries) {
+    for (final entry in _visibleFormEntries(data)) {
       final key = entry.key;
-      final value = (entry.value ?? '').toString().trim();
-      if (key.startsWith('_') || value.isEmpty) continue;
+      final value = entry.value;
       buffer.writeln('$key: $value');
     }
     await Clipboard.setData(ClipboardData(text: buffer.toString()));
@@ -902,6 +901,74 @@ class _FormDataButton extends StatelessWidget {
     }
   }
 
+  String _displayValue(Object? raw) {
+    if (raw == null) return '';
+    if (raw is String) return raw.trim();
+    if (raw is Iterable) {
+      return raw
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .join(', ');
+    }
+    if (raw is Map) return raw.values.map((item) => item.toString()).join(', ');
+    return raw.toString().trim();
+  }
+
+  String _fieldIdentity(String key, String value) {
+    final lowerKey = key.toLowerCase();
+    if (_isEmailField(key, value)) return 'email';
+    if (_isPhoneField(key, value)) return 'phone';
+    if (lowerKey.contains('nombre') || lowerKey.contains('name')) return 'name';
+    if (lowerKey.contains('mensaje') || lowerKey.contains('message')) {
+      return 'message';
+    }
+    if (lowerKey.contains('empresa') || lowerKey.contains('company')) {
+      return 'company';
+    }
+    if (lowerKey.contains('presupuesto') || lowerKey.contains('budget')) {
+      return 'budget';
+    }
+    if (lowerKey.contains('fecha') || lowerKey.contains('date')) return 'date';
+    return lowerKey.trim();
+  }
+
+  IconData _fieldIcon(String identity) {
+    switch (identity) {
+      case 'email':
+        return Icons.mail_outline_rounded;
+      case 'phone':
+        return Icons.phone_outlined;
+      case 'name':
+        return Icons.person_outline_rounded;
+      case 'message':
+        return Icons.chat_bubble_outline_rounded;
+      case 'company':
+        return Icons.business_outlined;
+      case 'budget':
+        return Icons.payments_outlined;
+      case 'date':
+        return Icons.calendar_month_outlined;
+      default:
+        return Icons.short_text_rounded;
+    }
+  }
+
+  List<MapEntry<String, String>> _visibleFormEntries(
+    Map<String, dynamic> data,
+  ) {
+    final seen = <String>{};
+    final entries = <MapEntry<String, String>>[];
+    for (final entry in data.entries) {
+      if (entry.key.startsWith('_')) continue;
+      final value = _displayValue(entry.value);
+      if (value.isEmpty) continue;
+      final identity = _fieldIdentity(entry.key, value);
+      if (!seen.add(identity)) continue;
+      entries.add(MapEntry(entry.key, value));
+    }
+    return entries;
+  }
+
   String _formTitle(String? formType) {
     switch (formType) {
       case 'cotizacion':
@@ -921,77 +988,82 @@ class _FormDataButton extends StatelessWidget {
 
   void _show(BuildContext context) {
     final data = lead.formData!;
+    final entries = _visibleFormEntries(data);
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: ctx.bgCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header ──────────────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 16, 0),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.assignment_ind_outlined,
-                      size: 22,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _formTitle(lead.formType),
-                            style: GoogleFonts.outfit(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: ctx.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            lead.displayName,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 12,
-                              color: ctx.textMuted,
-                            ),
-                          ),
-                        ],
+          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 740),
+          child: Container(
+            decoration: BoxDecoration(
+              color: ctx.bgCard,
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 26, 22, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.assignment_ind_outlined,
+                        size: 38,
+                        color: AppColors.primary,
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                      color: ctx.textMuted,
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _formTitle(lead.formType),
+                              style: GoogleFonts.outfit(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                                color: ctx.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${lead.displayName} · Información enviada desde el perfil público.',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 15,
+                                color: ctx.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 28),
+                        color: ctx.textPrimary,
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                child: Divider(color: ctx.borderColor, height: 1),
-              ),
-              // ── Fields ──────────────────────────────────────────────
-              Flexible(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                  shrinkWrap: true,
-                  children: [
-                    for (final entry in data.entries)
-                      if (!(entry.key.startsWith('_')) &&
-                          ((entry.value as String?)?.isNotEmpty ?? false))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 22, 30, 0),
+                  child: Divider(color: ctx.borderStrongSoft, height: 1),
+                ),
+                Flexible(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(30, 22, 30, 26),
+                    shrinkWrap: true,
+                    children: [
+                      for (final entry in entries)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
+                          padding: const EdgeInsets.only(bottom: 12),
                           child: Builder(
                             builder: (_) {
                               final key = entry.key;
-                              final value = (entry.value ?? '') as String;
+                              final value = entry.value;
+                              final identity = _fieldIdentity(key, value);
                               final isEmail = _isEmailField(key, value);
                               final isPhone = _isPhoneField(key, value);
                               final cleanPhone = value.replaceAll(
@@ -999,97 +1071,130 @@ class _FormDataButton extends StatelessWidget {
                                 '',
                               );
 
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          key,
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: ctx.textMuted,
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ),
-                                      if (isEmail)
-                                        _FieldCornerAction(
-                                          icon: Icons.alternate_email_rounded,
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 13,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: ctx.borderStrongSoft,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          _fieldIcon(identity),
+                                          size: 22,
                                           color: AppColors.primary,
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                key,
+                                                style: GoogleFonts.dmSans(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: ctx.textSecondary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                value,
+                                                style: GoogleFonts.dmSans(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: ctx.textPrimary,
+                                                  height: 1.25,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (isEmail)
+                                          _FieldCornerAction(
+                                            icon: Icons.alternate_email_rounded,
+                                            color: AppColors.primary,
+                                            onTap: () => _launch(
+                                              context,
+                                              'mailto:$value',
+                                            ),
+                                          ),
+                                        if (isPhone)
+                                          _FieldCornerAction(
+                                            icon: Icons.call_outlined,
+                                            color: const Color(0xFF16A34A),
+                                            onTap: () => _launch(
+                                              context,
+                                              'tel:$cleanPhone',
+                                            ),
+                                          ),
+                                        if (isPhone)
+                                          _FieldCornerAction(
+                                            icon: Icons
+                                                .chat_bubble_outline_rounded,
+                                            color: const Color(0xFF16A34A),
+                                            onTap: () => _launch(
+                                              context,
+                                              'https://wa.me/$cleanPhone',
+                                            ),
+                                          ),
+                                        _FieldCornerAction(
+                                          icon: Icons.content_copy_rounded,
+                                          color: context.textSecondary,
                                           onTap: () =>
-                                              _launch(context, 'mailto:$value'),
+                                              _copyField(context, value),
                                         ),
-                                      if (isPhone)
-                                        _FieldCornerAction(
-                                          icon: Icons.call_outlined,
-                                          color: const Color(0xFF16A34A),
-                                          onTap: () => _launch(
-                                            context,
-                                            'tel:$cleanPhone',
-                                          ),
-                                        ),
-                                      if (isPhone)
-                                        _FieldCornerAction(
-                                          icon:
-                                              Icons.chat_bubble_outline_rounded,
-                                          color: const Color(0xFF16A34A),
-                                          onTap: () => _launch(
-                                            context,
-                                            'https://wa.me/$cleanPhone',
-                                          ),
-                                        ),
-                                      _FieldCornerAction(
-                                        icon: Icons.content_copy_rounded,
-                                        color: context.textSecondary,
-                                        onTap: () => _copyField(context, value),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 10,
+                                      ],
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: ctx.bgSubtle,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: ctx.borderColor,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      value,
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        color: ctx.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               );
                             },
                           ),
                         ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _DialogPrimaryAction(
-                    icon: Icons.save_alt_rounded,
-                    label: 'Guardar contacto',
-                    onTap: () => _saveLeadSummary(context, data),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                Divider(color: ctx.borderStrongSoft, height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 16, 30, 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'Cerrar',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      _DialogPrimaryAction(
+                        icon: Icons.save_alt_rounded,
+                        label: 'Guardar contacto',
+                        onTap: () => _saveLeadSummary(context, data),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1120,7 +1225,7 @@ class _FormDataButton extends StatelessWidget {
               ),
               const SizedBox(width: 5),
               Text(
-                'Ver formulario',
+                'Ver info',
                 style: GoogleFonts.dmSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -1153,24 +1258,22 @@ class _DialogPrimaryAction extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
           decoration: BoxDecoration(
-            color: context.isDark
-                ? AppColors.primary.withValues(alpha: 0.1)
-                : AppColors.primary.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(8),
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 13, color: AppColors.primary),
-              const SizedBox(width: 5),
+              Icon(icon, size: 18, color: Colors.white),
+              const SizedBox(width: 8),
               Text(
                 label,
                 style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
                 ),
               ),
             ],
@@ -1200,16 +1303,10 @@ class _FieldCornerAction extends StatelessWidget {
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           onTap: onTap,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: context.isDark
-                  ? color.withValues(alpha: 0.1)
-                  : color.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Icon(icon, size: 13, color: color),
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: Icon(icon, size: 18, color: color),
           ),
         ),
       ),

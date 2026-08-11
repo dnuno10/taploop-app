@@ -15,6 +15,7 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/utils/visitor_info.dart';
 import '../../../core/widgets/native_web_image.dart';
 import '../../../core/widgets/platform_icon.dart';
+import '../../../core/widgets/taploop_toast.dart';
 import '../models/digital_card_model.dart';
 import '../models/contact_item_model.dart';
 import '../models/social_link_model.dart';
@@ -30,7 +31,6 @@ class PublicCardView extends StatefulWidget {
   final String? slug;
   final String? userId;
   final String? nfcSerial;
-  final String? campaignId;
 
   /// 'qr' when opened from a QR scan, null/'' for regular link share
   final String? via;
@@ -39,7 +39,6 @@ class PublicCardView extends StatefulWidget {
     this.slug,
     this.userId,
     this.nfcSerial,
-    this.campaignId,
     this.via,
   }) : assert(slug != null || userId != null || nfcSerial != null);
 
@@ -66,11 +65,17 @@ class _PublicCardViewState extends State<PublicCardView> {
   }
 
   Future<void> _hydrateOrganizationLogo(DigitalCardModel? card) async {
-    if (card == null || card.orgId == null || card.orgId!.isEmpty) return;
+    if (card == null) return;
     if (card.companyLogoUrl?.trim().isNotEmpty == true) return;
-    final orgLogoUrl = await CardRepository.fetchOrganizationLogoUrl(
-      card.orgId,
-    );
+    final directOrgId = card.orgId?.trim();
+    final orgId = directOrgId?.isNotEmpty == true
+        ? directOrgId
+        : await CardRepository.resolveCardOrganizationId({
+            'org_id': card.orgId,
+            'user_id': card.userId,
+          });
+    if (orgId == null || orgId.isEmpty) return;
+    final orgLogoUrl = await CardRepository.fetchOrganizationLogoUrl(orgId);
     if (!mounted || _card?.id != card.id) return;
     if (orgLogoUrl == null || orgLogoUrl.isEmpty) return;
     if (_card?.companyLogoUrl == orgLogoUrl) return;
@@ -105,13 +110,7 @@ class _PublicCardViewState extends State<PublicCardView> {
         }
         if (card != null && card.isActive) {
           final source = (widget.via == 'qr') ? 'qr' : 'link';
-          unawaited(
-            AnalyticsRepository.recordVisit(
-              card.id,
-              source,
-              campaignId: widget.campaignId,
-            ),
-          );
+          unawaited(AnalyticsRepository.recordVisit(card.id, source));
         }
         unawaited(_hydrateOrganizationLogo(card));
       }
@@ -156,13 +155,7 @@ class _PublicCardViewState extends State<PublicCardView> {
       });
     }
     if (card != null && card.isActive) {
-      unawaited(
-        AnalyticsRepository.recordVisit(
-          card.id,
-          'nfc',
-          campaignId: widget.campaignId,
-        ),
-      );
+      unawaited(AnalyticsRepository.recordVisit(card.id, 'nfc'));
     }
     unawaited(_hydrateOrganizationLogo(card));
   }
@@ -278,7 +271,7 @@ class _PublicCardViewState extends State<PublicCardView> {
             : 'Tarjeta digital desactivada por seguridad',
       );
     }
-    return _CardPage(card: _card!, campaignId: widget.campaignId);
+    return _CardPage(card: _card!);
   }
 }
 
@@ -288,8 +281,18 @@ Color _cardAccent(DigitalCardModel card) => card.primaryColor;
 
 Color _cardBgBase(DigitalCardModel card) => card.bgColor ?? Colors.white;
 
-Color _cardTextColor(DigitalCardModel card) =>
-    card.textColorIsDark ? const Color(0xFF0D0D0D) : Colors.white;
+Color _cardTextColor(DigitalCardModel card) {
+  final base = card.bgColor ?? Colors.white;
+  final end = card.bgColorEnd;
+  final sampled = switch (card.bgStyle) {
+    CardBgStyle.gradient ||
+    CardBgStyle.mesh => Color.lerp(base, end ?? base, 0.5) ?? base,
+    CardBgStyle.plain || CardBgStyle.stripes => base,
+  };
+  return ThemeData.estimateBrightnessForColor(sampled) == Brightness.dark
+      ? Colors.white
+      : const Color(0xFF0D0D0D);
+}
 
 /// Mirrors _ScreenContent._buildBgDecoration from digital_profile_preview.dart
 BoxDecoration _buildPageDecoration(DigitalCardModel card) {
@@ -317,6 +320,53 @@ BoxDecoration _buildPageDecoration(DigitalCardModel card) {
     default:
       return BoxDecoration(color: bgBase);
   }
+}
+
+Future<bool> _launchPublicUri(
+  Uri uri, {
+  LaunchMode mode = LaunchMode.externalApplication,
+}) async {
+  try {
+    return await launchUrl(uri, mode: mode, webOnlyWindowName: '_self');
+  } catch (error) {
+    debugPrint('[PublicCard] launch error for $uri: $error');
+    return false;
+  }
+}
+
+String _normalizeWebUrl(String raw) {
+  final value = raw.trim();
+  if (value.startsWith(RegExp(r'https?://'))) return value;
+  return 'https://$value';
+}
+
+String _normalizePublicSocialUrl(SocialLinkModel link) {
+  final raw = link.url.trim();
+  if (raw.isEmpty) return raw;
+  if (link.platform == SocialPlatform.instagram) {
+    return _normalizeInstagramUrl(raw);
+  }
+  return _normalizeWebUrl(raw);
+}
+
+String _normalizeInstagramUrl(String raw) {
+  final value = raw.trim();
+  if (value.startsWith(RegExp(r'https?://'))) return value;
+  if (value.startsWith('instagram://')) return value;
+
+  if (value.startsWith('@')) {
+    return 'https://www.instagram.com/${value.substring(1)}';
+  }
+
+  if (value.startsWith('www.instagram.com/') ||
+      value.startsWith('instagram.com/')) {
+    return value.startsWith('www.') ? 'https://$value' : 'https://www.$value';
+  }
+
+  final normalizedHandle = value
+      .replaceFirst(RegExp(r'^/+'), '')
+      .replaceFirst(RegExp(r'^@+'), '');
+  return 'https://www.instagram.com/$normalizedHandle';
 }
 
 class _CardDeactivatedPage extends StatelessWidget {
@@ -410,19 +460,11 @@ class _StripePainter extends CustomPainter {
 
 // ─── Card Page ────────────────────────────────────────────────────────────────
 
-Widget _buildCardHeader(DigitalCardModel card) {
-  switch (card.layoutStyle) {
-    case CardLayoutStyle.banner:
-      return _BannerHeader(card: card);
-    default:
-      return _HeroHeader(card: card);
-  }
-}
+Widget _buildCardHeader(DigitalCardModel card) => _HeroHeader(card: card);
 
 class _CardPage extends StatelessWidget {
   final DigitalCardModel card;
-  final String? campaignId;
-  const _CardPage({required this.card, this.campaignId});
+  const _CardPage({required this.card});
 
   @override
   Widget build(BuildContext context) {
@@ -433,6 +475,7 @@ class _CardPage extends StatelessWidget {
     final accent = _cardAccent(card);
     final textCol = _cardTextColor(card);
     final bgBase = card.bgColor ?? _cardBgBase(card);
+    final isModern = card.usesModernProfileDesign;
 
     final scrollView = CustomScrollView(
       slivers: [
@@ -442,44 +485,58 @@ class _CardPage extends StatelessWidget {
             card: card,
             contacts: visibleContacts,
             accent: accent,
-            campaignId: campaignId,
           ),
         ),
+        if (isModern)
+          SliverToBoxAdapter(
+            child: _ModernActionButtons(
+              card: card,
+              contacts: visibleContacts,
+              accent: accent,
+            ),
+          ),
+        if (isModern && visibleSocials.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: _ModernSectionHeader(
+              title: 'Conecta conmigo',
+              textColor: textCol,
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _ModernSocialCircles(links: visibleSocials, cardId: card.id),
+          ),
+        ],
         if (visibleContacts.isNotEmpty) ...[
           SliverToBoxAdapter(
-            child: _SectionHeader(title: 'Contacto', textColor: textCol),
+            child: isModern
+                ? _ModernSectionHeader(title: 'Contacto', textColor: textCol)
+                : _SectionHeader(title: 'Contacto', textColor: textCol),
           ),
           SliverToBoxAdapter(
             child: _ContactSection(
-              // ─── Hero Header ──────────────────────────────────────────────────────────────
               items: visibleContacts,
-              accent: accent,
               textColor: textCol,
               cardId: card.id,
-              campaignId: campaignId,
+              modern: isModern,
             ),
           ),
         ],
-        if (visibleSocials.isNotEmpty) ...[
+        if (!isModern && visibleSocials.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: _SectionHeader(title: 'Redes sociales', textColor: textCol),
           ),
           SliverToBoxAdapter(
             child: _SocialSection(
               links: visibleSocials,
-              accent: accent,
               textColor: textCol,
               cardId: card.id,
-              campaignId: campaignId,
             ),
           ),
         ],
-        if (card.calendarEnabled) ...[
+        if (card.calendarEnabled &&
+            (card.calendarUrl?.trim().isNotEmpty ?? false)) ...[
           SliverToBoxAdapter(
-            child: _SectionHeader(
-              title: 'Agenda una reunión',
-              textColor: textCol,
-            ),
+            child: _SectionHeader(title: 'Agendar reunión', textColor: textCol),
           ),
           SliverToBoxAdapter(
             child: _CalendarButton(
@@ -490,12 +547,7 @@ class _CardPage extends StatelessWidget {
           ),
         ],
         SliverToBoxAdapter(
-          child: _FormsSection(
-            card: card,
-            accent: accent,
-            textColor: textCol,
-            campaignId: campaignId,
-          ),
+          child: _FormsSection(card: card, accent: accent, textColor: textCol),
         ),
         SliverToBoxAdapter(
           child: _Footer(card: card, accent: accent),
@@ -532,13 +584,11 @@ class _SaveContactButton extends StatelessWidget {
   final DigitalCardModel card;
   final List<ContactItemModel> contacts;
   final Color accent;
-  final String? campaignId;
 
   const _SaveContactButton({
     required this.card,
     required this.contacts,
     required this.accent,
-    this.campaignId,
   });
 
   Future<void> _downloadVCard() async {
@@ -550,7 +600,6 @@ class _SaveContactButton extends StatelessWidget {
         AnalyticsRepository.recordInteraction(
           cardId: card.id,
           source: 'downloaded_contact',
-          campaignId: campaignId,
         ),
       );
     }
@@ -658,16 +707,158 @@ class _SaveContactButton extends StatelessWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 15),
+                padding: const EdgeInsets.symmetric(vertical: 20),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(999),
                 ),
                 textStyle: GoogleFonts.dmSans(
-                  fontSize: 15,
+                  fontSize: 20,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModernActionButtons extends StatelessWidget {
+  final DigitalCardModel card;
+  final List<ContactItemModel> contacts;
+  final Color accent;
+
+  const _ModernActionButtons({
+    required this.card,
+    required this.contacts,
+    required this.accent,
+  });
+
+  ContactItemModel? get _emailContact {
+    for (final item in contacts) {
+      if (item.type == ContactType.email && item.value.trim().isNotEmpty) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _sendEmail() async {
+    final email = _emailContact;
+    if (email == null) return;
+    final uri = Uri(scheme: 'mailto', path: email.value.trim());
+    final opened = await _launchPublicUri(uri);
+    if (opened) {
+      unawaited(
+        AnalyticsRepository.recordInteraction(
+          cardId: card.id,
+          source: 'contact',
+          contactItemId: email.id,
+        ),
+      );
+    }
+  }
+
+  Future<void> _share(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: card.publicUrl));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Enlace copiado',
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasEmail = _emailContact != null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Row(
+            children: [
+              if (hasEmail) ...[
+                Expanded(
+                  child: _ModernSecondaryButton(
+                    icon: Icons.email_rounded,
+                    label: 'Enviar correo',
+                    accent: accent,
+                    onTap: _sendEmail,
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: _ModernSecondaryButton(
+                  icon: Icons.share_rounded,
+                  label: 'Compartir',
+                  accent: accent,
+                  onTap: () => _share(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModernSecondaryButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _ModernSecondaryButton({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0xFFE5E7EB), width: 1.4),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 22, color: onTap == null ? Colors.grey : accent),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(
+                    fontSize: 20,
+                    height: 1.05,
+                    fontWeight: FontWeight.w800,
+                    color: onTap == null
+                        ? Colors.grey
+                        : const Color(0xFF0D0D0D),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -686,7 +877,13 @@ class _HeroHeader extends StatelessWidget {
     final accent = _cardAccent(card);
     final textCol = _cardTextColor(card);
     final subCol = textCol.withValues(alpha: 0.65);
-    final isCentered = card.layoutStyle != CardLayoutStyle.leftAligned;
+    const logoMaxWidth = 220.0;
+    const logoHeight = 58.0;
+    const avatarSize = 112.0;
+    const nameSize = 34.0;
+    const titleSize = 20.0;
+    const companySize = 14.0;
+    const bioSize = 14.0;
 
     return Container(
       width: double.infinity,
@@ -694,85 +891,95 @@ class _HeroHeader extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 48, 24, 36),
+          padding: const EdgeInsets.fromLTRB(24, 46, 24, 18),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
-                crossAxisAlignment: isCentered
-                    ? CrossAxisAlignment.center
-                    : CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Logo de empresa (primero)
                   if (card.companyLogoUrl != null &&
                       card.companyLogoUrl!.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
+                      padding: const EdgeInsets.only(bottom: 34),
                       child: _PublicCompanyLogo(
                         imageUrl: card.companyLogoUrl!,
-                        maxWidth: 280,
-                        height: 110,
+                        maxWidth: logoMaxWidth,
+                        height: logoHeight,
                       ),
                     ),
                   // Avatar del usuario
                   _PublicProfileAvatar(
-                    name: card.name,
                     imageUrl: card.profilePhotoUrl,
-                    size: 112,
-                    borderWidth: 2.5,
+                    size: avatarSize,
                     accent: accent,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 26),
                   // Nombre
-                  Text(
-                    card.name,
-                    textAlign: isCentered ? TextAlign.center : TextAlign.left,
-                    style: GoogleFonts.outfit(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: textCol,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          card.name,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.outfit(
+                            fontSize: nameSize,
+                            height: 1.02,
+                            fontWeight: FontWeight.w800,
+                            color: textCol,
+                          ),
+                        ),
+                      ),
+                      if (card.showVerifiedBadge) ...[
+                        const SizedBox(width: 9),
+                        Icon(
+                          Icons.verified_rounded,
+                          size: 27,
+                          color: const Color(0xFF2F9DEB),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   // Puesto
                   Text(
                     card.jobTitle,
-                    textAlign: isCentered ? TextAlign.center : TextAlign.left,
-                    style: GoogleFonts.dmSans(fontSize: 15, color: subCol),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(
+                      fontSize: titleSize,
+                      height: 1.12,
+                      fontWeight: FontWeight.w800,
+                      color: textCol,
+                    ),
                   ),
                   // Compañía
                   if (card.company.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       card.company,
-                      textAlign: isCentered ? TextAlign.center : TextAlign.left,
+                      textAlign: TextAlign.center,
                       style: GoogleFonts.dmSans(
-                        fontSize: 15,
+                        fontSize: companySize,
                         fontWeight: FontWeight.w700,
                         color: subCol,
                       ),
                     ),
                   ],
                   if (card.bio != null && card.bio!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                    const SizedBox(height: 22),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
                       child: Text(
                         card.bio!,
-                        textAlign: isCentered
-                            ? TextAlign.center
-                            : TextAlign.left,
+                        textAlign: TextAlign.center,
                         style: GoogleFonts.dmSans(
-                          fontSize: 14,
-                          color: subCol,
-                          height: 1.5,
+                          fontSize: bioSize,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF6B7280),
+                          height: 1.42,
                         ),
                       ),
                     ),
@@ -802,23 +1009,16 @@ class _PublicCompanyLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: SizedBox(
-            width: maxWidth,
-            height: height,
-            child: NativeWebImage(
-              imageUrl: imageUrl,
-              width: maxWidth,
-              height: height,
-              fit: BoxFit.contain,
-            ),
-          ),
+      child: SizedBox(
+        width: maxWidth,
+        height: height,
+        child: NativeWebImage(
+          imageUrl: imageUrl,
+          width: maxWidth,
+          height: height,
+          fit: BoxFit.contain,
+          eager: true,
+          highPriority: true,
         ),
       ),
     );
@@ -826,198 +1026,61 @@ class _PublicCompanyLogo extends StatelessWidget {
 }
 
 class _PublicProfileAvatar extends StatelessWidget {
-  final String name;
   final String? imageUrl;
   final double size;
-  final double borderWidth;
   final Color accent;
 
   const _PublicProfileAvatar({
-    required this.name,
     required this.imageUrl,
     required this.size,
-    required this.borderWidth,
     required this.accent,
   });
-
-  String _initials(String value) {
-    final parts = value.trim().split(RegExp(r'\s+'));
-    if (parts.length >= 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return value.trim().isNotEmpty ? value.trim()[0].toUpperCase() : '?';
-  }
 
   @override
   Widget build(BuildContext context) {
     final cleanedUrl = imageUrl?.trim();
     final hasImage = cleanedUrl != null && cleanedUrl.isNotEmpty;
+    final placeholder = _AvatarIcon(size: size, accent: accent);
 
-    return Container(
+    return SizedBox(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: accent.withValues(alpha: 0.2),
-        border: Border.all(color: accent, width: borderWidth),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _AvatarInitials(
-            initials: _initials(name),
-            fontSize: size * 0.35,
-            accent: accent,
-          ),
-          if (hasImage)
-            NativeWebImage(
-              imageUrl: cleanedUrl,
-              fit: BoxFit.cover,
-              width: size,
-              height: size,
-              shape: BoxShape.circle,
-            ),
-        ],
-      ),
+      child: hasImage
+          ? ClipOval(
+              child: NativeWebImage(
+                imageUrl: cleanedUrl,
+                fit: BoxFit.cover,
+                width: size,
+                height: size,
+                shape: BoxShape.circle,
+                fallback: placeholder,
+                eager: true,
+                highPriority: true,
+              ),
+            )
+          : placeholder,
     );
   }
 }
 
-class _AvatarInitials extends StatelessWidget {
-  final String initials;
-  final double fontSize;
+class _AvatarIcon extends StatelessWidget {
+  final double size;
   final Color accent;
 
-  const _AvatarInitials({
-    required this.initials,
-    required this.fontSize,
-    required this.accent,
-  });
+  const _AvatarIcon({required this.size, required this.accent});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        initials,
-        style: GoogleFonts.outfit(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w800,
-          color: accent,
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Banner Header ────────────────────────────────────────────────────────────
-
-class _BannerHeader extends StatelessWidget {
-  final DigitalCardModel card;
-  const _BannerHeader({required this.card});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = _cardAccent(card);
-    final textCol = _cardTextColor(card);
-    final subCol = textCol.withValues(alpha: 0.65);
-
     return Container(
-      width: double.infinity,
-      color: Colors.transparent,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 40, 20, 28),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Logo de empresa (primero en su propio column)
-                  if (card.companyLogoUrl != null &&
-                      card.companyLogoUrl!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: _PublicCompanyLogo(
-                        imageUrl: card.companyLogoUrl!,
-                        maxWidth: 240,
-                        height: 96,
-                      ),
-                    ),
-                  // Row con avatar (izquierda) y datos (derecha)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Avatar del usuario (izquierda)
-                      _PublicProfileAvatar(
-                        name: card.name,
-                        imageUrl: card.profilePhotoUrl,
-                        size: 84,
-                        borderWidth: 2.5,
-                        accent: accent,
-                      ),
-                      const SizedBox(width: 16),
-                      // Datos (derecha)
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Nombre
-                            Text(
-                              card.name,
-                              style: GoogleFonts.outfit(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: textCol,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            // Puesto
-                            Text(
-                              card.jobTitle,
-                              style: GoogleFonts.dmSans(
-                                fontSize: 13,
-                                color: subCol,
-                              ),
-                            ),
-                            // Compañía
-                            if (card.company.isNotEmpty) ...[
-                              Text(
-                                card.company,
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: subCol,
-                                ),
-                              ),
-                            ],
-                            // Biografía
-                            if (card.bio != null && card.bio!.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                card.bio!,
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 12,
-                                  color: subCol,
-                                  height: 1.4,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.16),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Icon(
+          Icons.person_outline_rounded,
+          size: size * 0.42,
+          color: accent,
         ),
       ),
     );
@@ -1033,15 +1096,23 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: GoogleFonts.outfit(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: textColor.withValues(alpha: 0.5),
-          letterSpacing: 1.0,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 44, 20, 16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SizedBox(
+            width: double.infinity,
+            child: Text(
+              title.toUpperCase(),
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: textColor.withValues(alpha: 0.55),
+                letterSpacing: 1.6,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1052,136 +1123,289 @@ class _SectionHeader extends StatelessWidget {
 
 class _ContactSection extends StatelessWidget {
   final List<ContactItemModel> items;
-  final Color accent;
   final Color textColor;
   final String cardId;
-  final String? campaignId;
+  final bool modern;
   const _ContactSection({
     required this.items,
-    required this.accent,
     required this.textColor,
     required this.cardId,
-    this.campaignId,
+    this.modern = false,
   });
 
-  Future<void> _launchFromTap(
-    Uri uri, {
-    LaunchMode mode = LaunchMode.platformDefault,
-  }) async {
-    try {
-      await launchUrl(uri, mode: mode, webOnlyWindowName: '_self');
-    } catch (error) {
-      debugPrint('[PublicCard] contact launch error for $uri: $error');
-    }
-  }
-
   Future<void> _handleTap(ContactItemModel item) async {
+    final value = item.value.trim();
+    if (value.isEmpty) return;
+
     final Uri uri;
     switch (item.type) {
       case ContactType.phone:
-        uri = Uri(scheme: 'tel', path: item.value);
+        uri = Uri(scheme: 'tel', path: value);
         break;
       case ContactType.whatsapp:
-        final cleaned = item.value.replaceAll(RegExp(r'\D'), '');
+        final cleaned = value.replaceAll(RegExp(r'\D'), '');
+        if (cleaned.isEmpty) return;
         uri = Uri.parse('https://wa.me/$cleaned');
         break;
       case ContactType.email:
-        uri = Uri(scheme: 'mailto', path: item.value);
+        uri = Uri(scheme: 'mailto', path: value);
         break;
       case ContactType.address:
         uri = Uri.parse(
-          'https://maps.google.com/?q=${Uri.encodeComponent(item.value)}',
+          'https://maps.google.com/?q=${Uri.encodeComponent(value)}',
         );
         break;
       case ContactType.website:
-        uri = Uri.parse(
-          item.value.startsWith('http') ? item.value : 'https://${item.value}',
-        );
+        uri = Uri.parse(_normalizeWebUrl(value));
         break;
     }
-    final launchFuture = _launchFromTap(uri);
+    final opened = await _launchPublicUri(uri);
+    if (!opened) return;
     unawaited(
       AnalyticsRepository.recordInteraction(
         cardId: cardId,
         source: 'contact',
-        campaignId: campaignId,
         contactItemId: item.id,
       ),
     );
-    await launchFuture;
+  }
+
+  String _displayValue(ContactItemModel item) {
+    final value = item.value.trim();
+    if (item.type != ContactType.website || value.isEmpty) return value;
+    try {
+      final uri = Uri.parse(
+        value.startsWith('http') ? value : 'https://$value',
+      );
+      final host = uri.host.replaceFirst(RegExp(r'^www\.'), '');
+      return host.isNotEmpty ? host : value;
+    } catch (_) {
+      return value
+          .replaceFirst(RegExp(r'^https?://'), '')
+          .replaceFirst(RegExp(r'^www\.'), '')
+          .split('/')
+          .first;
+    }
+  }
+
+  String _modernLabel(ContactItemModel item) {
+    return switch (item.type) {
+      ContactType.phone => 'Llamar',
+      ContactType.whatsapp => 'Enviar WhatsApp',
+      ContactType.email => 'Enviar correo',
+      ContactType.address => 'Cómo llegar',
+      ContactType.website =>
+        item.displayLabel.isNotEmpty ? item.displayLabel : 'Visitar sitio web',
+    };
   }
 
   @override
   Widget build(BuildContext context) {
-    final tileBg = textColor.withValues(alpha: 0.04);
-    final tileBorder = textColor.withValues(alpha: 0.10);
-    final subText = textColor.withValues(alpha: 0.5);
+    const tileBorder = Color(0xFFE5E7EB);
+    const tileBg = Colors.white;
+    const labelColor = Color(0xFF6B7280);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Column(
-          children: [
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  color: tileBg,
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    onTap: () => _handleTap(item),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: tileBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          PlatformIcon.contact(contactType: item.type),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  item.displayLabel,
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 11,
-                                    color: subText,
-                                  ),
-                                ),
-                                Text(
-                                  item.value,
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: textColor,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            children: [
+              for (final item in items)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(modern ? 999 : 16),
+                    child: InkWell(
+                      onTap: () => _handleTap(item),
+                      borderRadius: BorderRadius.circular(modern ? 999 : 16),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: modern ? 26 : 14,
+                          vertical: modern ? 20 : 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: tileBg,
+                          borderRadius: BorderRadius.circular(
+                            modern ? 999 : 16,
+                          ),
+                          border: Border.all(
+                            color: tileBorder,
+                            width: modern ? 1.4 : 1.2,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            PlatformIcon.contact(
+                              contactType: item.type,
+                              size: modern ? 25 : 22,
+                              framed: !modern,
+                              color: modern ? const Color(0xFF2F5BFF) : null,
                             ),
-                          ),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            size: 13,
-                            color: textColor.withValues(alpha: 0.3),
-                          ),
-                        ],
+                            SizedBox(width: modern ? 18 : 14),
+                            Expanded(
+                              child: modern
+                                  ? Text(
+                                      _modernLabel(item),
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 20,
+                                        height: 1.08,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF0D0D0D),
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.visible,
+                                    )
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.displayLabel,
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: labelColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _displayValue(item),
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 17,
+                                            height: 1.18,
+                                            fontWeight: FontWeight.w600,
+                                            color: textColor,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                            Icon(
+                              modern
+                                  ? Icons.arrow_forward_rounded
+                                  : Icons.chevron_right_rounded,
+                              size: modern ? 30 : 22,
+                              color: modern
+                                  ? const Color(0xFF0D0D0D)
+                                  : const Color(0xFF9CA3AF),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModernSectionHeader extends StatelessWidget {
+  final String title;
+  final Color textColor;
+
+  const _ModernSectionHeader({required this.title, required this.textColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 28, 14, 12),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SizedBox(
+            width: double.infinity,
+            child: Text(
+              title,
+              style: GoogleFonts.outfit(
+                fontSize: 19,
+                height: 1.1,
+                fontWeight: FontWeight.w800,
+                color: textColor,
               ),
-          ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModernSocialCircles extends StatelessWidget {
+  final List<SocialLinkModel> links;
+  final String cardId;
+
+  const _ModernSocialCircles({required this.links, required this.cardId});
+
+  Future<void> _openUrl(SocialLinkModel link) async {
+    final normalizedUrl = _normalizePublicSocialUrl(link);
+    if (normalizedUrl.isEmpty) return;
+    final uri = Uri.parse(normalizedUrl);
+    final opened = await _launchPublicUri(uri);
+    if (opened) {
+      unawaited(
+        AnalyticsRepository.recordInteraction(
+          cardId: cardId,
+          source: 'social',
+          socialLinkId: link.id,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SizedBox(
+            width: double.infinity,
+            child: Wrap(
+              alignment: WrapAlignment.start,
+              spacing: 12,
+              runSpacing: 10,
+              children: [
+                for (final link in links.take(6))
+                  Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => _openUrl(link),
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFFE5E7EB),
+                            width: 1.1,
+                          ),
+                        ),
+                        child: Center(
+                          child: PlatformIcon.social(
+                            platform: link.platform,
+                            framed: false,
+                            size: 25,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1192,72 +1416,27 @@ class _ContactSection extends StatelessWidget {
 
 class _SocialSection extends StatelessWidget {
   final List<SocialLinkModel> links;
-  final Color accent;
   final Color textColor;
   final String cardId;
-  final String? campaignId;
   const _SocialSection({
     required this.links,
-    required this.accent,
     required this.textColor,
     required this.cardId,
-    this.campaignId,
   });
 
-  Future<void> _launchFromTap(Uri uri) async {
-    try {
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-        webOnlyWindowName: '_self',
-      );
-    } catch (error) {
-      debugPrint('[PublicCard] social launch error for $uri: $error');
-    }
-  }
-
   Future<void> _openUrl(SocialLinkModel link) async {
-    final uri = Uri.parse(_normalizeSocialUrl(link));
-    final launchFuture = _launchFromTap(uri);
+    final normalizedUrl = _normalizePublicSocialUrl(link);
+    if (normalizedUrl.isEmpty) return;
+    final uri = Uri.parse(normalizedUrl);
+    final opened = await _launchPublicUri(uri);
+    if (!opened) return;
     unawaited(
       AnalyticsRepository.recordInteraction(
         cardId: cardId,
         source: 'social',
-        campaignId: campaignId,
         socialLinkId: link.id,
       ),
     );
-    await launchFuture;
-  }
-
-  String _normalizeSocialUrl(SocialLinkModel link) {
-    final raw = link.url.trim();
-    if (raw.isEmpty) return raw;
-    if (link.platform == SocialPlatform.instagram) {
-      return _normalizeInstagramUrl(raw);
-    }
-    return raw.startsWith(RegExp(r'https?://')) ? raw : 'https://$raw';
-  }
-
-  String _normalizeInstagramUrl(String raw) {
-    final value = raw.trim();
-    if (value.startsWith(RegExp(r'https?://'))) return value;
-
-    if (value.startsWith('instagram://')) return value;
-
-    if (value.startsWith('@')) {
-      return 'https://www.instagram.com/${value.substring(1)}';
-    }
-
-    if (value.startsWith('www.instagram.com/') ||
-        value.startsWith('instagram.com/')) {
-      return value.startsWith('www.') ? 'https://$value' : 'https://www.$value';
-    }
-
-    final normalizedHandle = value
-        .replaceFirst(RegExp(r'^/+'), '')
-        .replaceFirst(RegExp(r'^@+'), '');
-    return 'https://www.instagram.com/$normalizedHandle';
   }
 
   String _shortHandle(String url) {
@@ -1275,75 +1454,86 @@ class _SocialSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tileBg = textColor.withValues(alpha: 0.04);
-    final tileBorder = textColor.withValues(alpha: 0.10);
-    final subText = textColor.withValues(alpha: 0.5);
+    const tileBorder = Color(0xFFE5E7EB);
+    const tileBg = Colors.white;
+    const labelColor = Color(0xFF6B7280);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Column(
-          children: [
-            for (final link in links)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  color: tileBg,
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    onTap: () => _openUrl(link),
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: tileBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          PlatformIcon.social(platform: link.platform),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  link.label,
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: textColor,
-                                  ),
-                                ),
-                                Text(
-                                  _shortHandle(link.url),
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 12,
-                                    color: subText,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            children: [
+              for (final link in links)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      onTap: () => _openUrl(link),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: tileBg,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: tileBorder, width: 1.2),
+                        ),
+                        child: Row(
+                          children: [
+                            PlatformIcon.social(
+                              platform: link.platform,
+                              size: 22,
                             ),
-                          ),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            size: 13,
-                            color: textColor.withValues(alpha: 0.3),
-                          ),
-                        ],
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    link.label,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 17,
+                                      height: 1.12,
+                                      fontWeight: FontWeight.w600,
+                                      color: textColor,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _shortHandle(link.url),
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: labelColor,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 22,
+                              color: const Color(0xFF9CA3AF),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1370,9 +1560,7 @@ class _Footer extends StatelessWidget {
             GestureDetector(
               onTap: () async {
                 final uri = Uri.parse('https://app.taploop.com.mx');
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
+                await _launchPublicUri(uri);
               },
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1422,9 +1610,7 @@ class _CalendarButton extends StatelessWidget {
       final rawUrl = links[provider];
       if (rawUrl == null || rawUrl.trim().isEmpty) return;
       final uri = Uri.parse(normalizeCalendarUrl(rawUrl));
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      await _launchPublicUri(uri);
     }
 
     Future<void> handleTap() async {
@@ -1475,40 +1661,48 @@ class _CalendarButton extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Material(
-          color: accent,
-          borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            onTap: handleTap,
-            borderRadius: BorderRadius.circular(14),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.calendar_today_outlined,
-                    size: 18,
-                    color: Colors.white,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SizedBox(
+            width: double.infinity,
+            child: Material(
+              color: accent,
+              borderRadius: BorderRadius.circular(999),
+              child: InkWell(
+                onTap: handleTap,
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 26,
+                    vertical: 20,
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Agendar reunión',
-                    style: GoogleFonts.outfit(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 25,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          'Agendar reunión',
+                          style: GoogleFonts.outfit(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 30,
+                        color: Colors.white,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1524,12 +1718,10 @@ class _FormsSection extends StatefulWidget {
   final DigitalCardModel card;
   final Color accent;
   final Color textColor;
-  final String? campaignId;
   const _FormsSection({
     required this.card,
     required this.accent,
     required this.textColor,
-    this.campaignId,
   });
 
   @override
@@ -1570,41 +1762,55 @@ class _FormsSectionState extends State<_FormsSection> {
   Widget build(BuildContext context) {
     if (_loading) return const SizedBox.shrink();
     if (_loadFailed) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-        child: Text(
-          'No se pudieron cargar los formularios dinámicos.',
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            color: widget.textColor.withValues(alpha: 0.65),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Text(
+              'No se pudieron cargar los formularios.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: widget.textColor.withValues(alpha: 0.65),
+              ),
+            ),
           ),
         ),
       );
     }
     if (_forms.isEmpty) return const SizedBox.shrink();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _SectionHeader(title: 'Formularios', textColor: widget.textColor),
-            for (final form in _forms)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _FormCard(
-                  form: form,
-                  card: widget.card,
-                  accent: widget.accent,
-                  textColor: widget.textColor,
-                  campaignId: widget.campaignId,
-                ),
-              ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SectionHeader(
+          title: 'Formulario de contacto',
+          textColor: widget.textColor,
         ),
-      ),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final form in _forms)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _FormCard(
+                        form: form,
+                        card: widget.card,
+                        accent: widget.accent,
+                        textColor: widget.textColor,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1614,13 +1820,11 @@ class _FormCard extends StatefulWidget {
   final DigitalCardModel card;
   final Color accent;
   final Color textColor;
-  final String? campaignId;
   const _FormCard({
     required this.form,
     required this.card,
     required this.accent,
     required this.textColor,
-    this.campaignId,
   });
 
   @override
@@ -1630,9 +1834,6 @@ class _FormCard extends StatefulWidget {
 class _FormCardState extends State<_FormCard> {
   bool _expanded = false;
   bool _submitting = false;
-  bool _submitted = false;
-  bool _alreadySubmittedOnDevice = false;
-  bool _checkingDeviceState = true;
   final Map<String, TextEditingController> _ctrl = {};
 
   @override
@@ -1641,22 +1842,6 @@ class _FormCardState extends State<_FormCard> {
     for (final f in widget.form.fields) {
       _ctrl[f.id] = TextEditingController();
     }
-    _loadDeviceSubmissionState();
-  }
-
-  Future<void> _loadDeviceSubmissionState() async {
-    final exists = await hasLocalLeadSubmission(
-      cardId: widget.card.id,
-      formId: widget.form.id,
-    );
-    if (!mounted) return;
-    setState(() {
-      _alreadySubmittedOnDevice = exists;
-      _checkingDeviceState = false;
-      if (exists) {
-        _submitted = true;
-      }
-    });
   }
 
   @override
@@ -1684,17 +1869,6 @@ class _FormCardState extends State<_FormCard> {
   }
 
   Future<void> _submit() async {
-    if (_alreadySubmittedOnDevice) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Este dispositivo ya envió este formulario.'),
-          ),
-        );
-      }
-      return;
-    }
-
     final fields = widget.form.fields;
     // Validate required
     for (final f in fields) {
@@ -1751,7 +1925,6 @@ class _FormCardState extends State<_FormCard> {
         cardId: widget.card.id,
         formType: widget.form.id,
         name: name.isEmpty ? 'Anónimo' : name,
-        campaignId: widget.campaignId,
         email: email,
         phone: phone,
         company: company,
@@ -1760,19 +1933,21 @@ class _FormCardState extends State<_FormCard> {
       await AnalyticsRepository.recordInteraction(
         cardId: widget.card.id,
         source: 'form',
-        campaignId: widget.campaignId,
         smartFormId: widget.form.id,
       );
-      await markLocalLeadSubmission(
-        cardId: widget.card.id,
-        formId: widget.form.id,
-      );
       if (mounted) {
+        for (final controller in _ctrl.values) {
+          controller.clear();
+        }
         setState(() {
-          _submitted = true;
-          _alreadySubmittedOnDevice = true;
           _submitting = false;
+          _expanded = false;
         });
+        TapLoopToast.show(
+          context,
+          'Solicitud enviada satisfactoriamente.',
+          TapLoopToastType.success,
+        );
       }
     } catch (e) {
       debugPrint('[PublicCardView] submit form error: $e');
@@ -1792,135 +1967,72 @@ class _FormCardState extends State<_FormCard> {
   Widget build(BuildContext context) {
     final accent = widget.accent;
     final textColor = widget.textColor;
-    final tileBg = textColor.withValues(alpha: 0.04);
-    final tileBorder = textColor.withValues(alpha: 0.12);
+    const tileBorder = Color(0xFFE5E7EB);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: tileBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: tileBorder),
-      ),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         children: [
-          // Header row — tap to expand/collapse
           InkWell(
-            onTap: _checkingDeviceState || _alreadySubmittedOnDevice
-                ? null
-                : () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(14),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: tileBorder, width: 1.2),
+              ),
               child: Row(
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Icon(
-                      Icons.description_outlined,
-                      size: 18,
-                      color: accent,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+                  Icon(Icons.dynamic_form_rounded, size: 24, color: accent),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Text(
                       widget.form.name,
                       style: GoogleFonts.outfit(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
                         color: textColor,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      _alreadySubmittedOnDevice
-                          ? Icons.check_circle_outline_rounded
-                          : Icons.expand_more_rounded,
-                      size: 20,
-                      color: textColor.withValues(alpha: 0.5),
-                    ),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 24,
+                    color: const Color(0xFF111827),
                   ),
                 ],
               ),
             ),
           ),
-          if (_alreadySubmittedOnDevice)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Este dispositivo ya llenó este formulario.',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: accent,
-                  ),
-                ),
-              ),
-            ),
-          // Expanded form body
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
-            child: _expanded && !_alreadySubmittedOnDevice
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: _submitted
-                        ? _SuccessMessage(accent: accent)
-                        : _FormBody(
-                            fields: widget.form.fields,
-                            ctrl: _ctrl,
-                            accent: accent,
-                            textColor: textColor,
-                            submitting: _submitting,
-                            onSubmit: _submit,
-                          ),
+            child: _expanded
+                ? Container(
+                    margin: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: tileBorder, width: 1.2),
+                    ),
+                    child: _FormBody(
+                      fields: widget.form.fields,
+                      ctrl: _ctrl,
+                      accent: accent,
+                      textColor: textColor,
+                      submitting: _submitting,
+                      onSubmit: _submit,
+                    ),
                   )
                 : const SizedBox.shrink(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SuccessMessage extends StatelessWidget {
-  final Color accent;
-  const _SuccessMessage({required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Column(
-        children: [
-          Icon(Icons.check_circle_outline_rounded, size: 40, color: accent),
-          const SizedBox(height: 10),
-          Text(
-            '¡Formulario enviado!',
-            style: GoogleFonts.outfit(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: accent,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Nos pondremos en contacto contigo pronto.',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
-              color: accent.withValues(alpha: 0.7),
-            ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -1947,23 +2059,23 @@ class _FormBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderCol = textColor.withValues(alpha: 0.2);
+    const borderCol = Color(0xFFE5E7EB);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final f in fields) ...[
           _buildField(f, borderCol, textColor),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
         ],
         const SizedBox(height: 4),
         Material(
           color: accent,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(999),
           child: InkWell(
             onTap: submitting ? null : onSubmit,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(999),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: const EdgeInsets.symmetric(vertical: 15),
               child: Center(
                 child: submitting
                     ? const SizedBox(
@@ -1977,7 +2089,7 @@ class _FormBody extends StatelessWidget {
                     : Text(
                         'Enviar',
                         style: GoogleFonts.outfit(
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
@@ -2007,24 +2119,20 @@ class _FormBody extends StatelessWidget {
         fontSize: 13,
         color: textColor.withValues(alpha: 0.6),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: borderCol),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: borderCol),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(
-          color: textColor.withValues(alpha: 0.5),
-          width: 1.5,
-        ),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: accent, width: 1.5),
       ),
-      filled: true,
-      fillColor: textColor.withValues(alpha: 0.04),
+      filled: false,
     );
 
     if (field.fieldType == SmartFormFieldType.textarea) {
@@ -2034,7 +2142,7 @@ class _FormBody extends StatelessWidget {
         keyboardType: TextInputType.multiline,
         inputFormatters: _inputFormattersForField(field.fieldType),
         maxLength: _maxFieldLength,
-        style: GoogleFonts.dmSans(fontSize: 14, color: textColor),
+        style: GoogleFonts.dmSans(fontSize: 15, color: textColor),
         decoration: decoration,
       );
     }
@@ -2044,7 +2152,7 @@ class _FormBody extends StatelessWidget {
       keyboardType: _keyboardTypeForField(field.fieldType),
       inputFormatters: _inputFormattersForField(field.fieldType),
       maxLength: _maxFieldLength,
-      style: GoogleFonts.dmSans(fontSize: 14, color: textColor),
+      style: GoogleFonts.dmSans(fontSize: 15, color: textColor),
       decoration: decoration,
     );
   }
@@ -2402,9 +2510,7 @@ class _NotFoundPage extends StatelessWidget {
               GestureDetector(
                 onTap: () async {
                   final uri = Uri.parse('https://app.taploop.com.mx');
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
+                  await _launchPublicUri(uri);
                 },
                 child: Text(
                   'Ir al inicio →',

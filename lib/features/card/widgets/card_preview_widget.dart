@@ -49,7 +49,9 @@ class CardPreviewWidget extends StatelessWidget {
         color: bgGradient == null ? bgBase : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: card.textColorIsDark ? 0.35 : 0.15),
+            color: Colors.black.withValues(
+              alpha: card.textColorIsDark ? 0.35 : 0.15,
+            ),
             blurRadius: 28,
             offset: const Offset(0, 8),
           ),
@@ -69,7 +71,9 @@ class CardPreviewWidget extends StatelessWidget {
                 height: width * 0.45,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: accentColor.withValues(alpha: card.textColorIsDark ? 0.25 : 0.08),
+                  color: accentColor.withValues(
+                    alpha: card.textColorIsDark ? 0.25 : 0.08,
+                  ),
                 ),
               ),
             ),
@@ -81,7 +85,9 @@ class CardPreviewWidget extends StatelessWidget {
                 height: width * 0.28,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: accentColor.withValues(alpha: card.textColorIsDark ? 0.15 : 0.05),
+                  color: accentColor.withValues(
+                    alpha: card.textColorIsDark ? 0.15 : 0.05,
+                  ),
                 ),
               ),
             ),
@@ -138,24 +144,26 @@ class CardPreviewWidget extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           // Avatar
-                          CircleAvatar(
-                            radius: height * 0.18,
-                            backgroundColor: accentColor,
-                            backgroundImage: card.profilePhotoUrl != null
-                                ? NetworkImage(card.profilePhotoUrl!)
-                                : null,
-                            child: card.profilePhotoUrl == null
-                                ? Text(
-                                    _initials(card.name),
-                                    style: GoogleFonts.outfit(
-                                      fontSize: height * 0.18,
-                                      fontWeight: FontWeight.w700,
-                                      color: card.textColorIsDark
-                                          ? Colors.white
-                                          : Colors.white,
+                          SizedBox(
+                            width: height * 0.36,
+                            height: height * 0.36,
+                            child: card.profilePhotoUrl != null
+                                ? ClipOval(
+                                    child: Image.network(
+                                      card.profilePhotoUrl!,
+                                      fit: BoxFit.cover,
                                     ),
                                   )
-                                : null,
+                                : Center(
+                                    child: Text(
+                                      _initials(card.name),
+                                      style: GoogleFonts.outfit(
+                                        fontSize: height * 0.18,
+                                        fontWeight: FontWeight.w700,
+                                        color: accentColor,
+                                      ),
+                                    ),
+                                  ),
                           ),
                           SizedBox(width: width * 0.03),
                           Expanded(

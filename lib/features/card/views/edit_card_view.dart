@@ -3,6 +3,8 @@ import 'dart:html' as html;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -17,6 +19,7 @@ import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/taploop_button.dart';
+import '../../../core/widgets/taploop_motion.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/digital_card_model.dart';
 import '../models/social_link_model.dart';
@@ -42,10 +45,10 @@ class _EditCardViewState extends State<EditCardView>
   static const _steps = <_EditStepData>[
     _EditStepData('Perfil', Icons.person_outline_rounded),
     _EditStepData('Contacto', Icons.call_outlined),
-    _EditStepData('Redes', Icons.language_rounded),
+    _EditStepData('Enlaces', Icons.link_rounded),
     _EditStepData('Diseño', Icons.palette_outlined),
     _EditStepData('Formularios', Icons.assignment_outlined),
-    _EditStepData('Calendario', Icons.event_outlined),
+    _EditStepData('Integraciones', Icons.hub_outlined),
   ];
 
   late TextEditingController _nameCtrl;
@@ -102,6 +105,16 @@ class _EditCardViewState extends State<EditCardView>
 
   void _onAppStateChanged() {
     final card = appState.currentCard;
+    if (card != null && card.id == _card.id && _unsaved) {
+      if (card.showVerifiedBadge != _card.showVerifiedBadge) {
+        setState(() {
+          _card = _card.copyWith(showVerifiedBadge: card.showVerifiedBadge);
+        });
+      }
+      _loadOrganizationName();
+      _loadFormCompletion();
+      return;
+    }
     if (card != null &&
         (card.id != _card.id ||
             card.companyLogoUrl != _card.companyLogoUrl ||
@@ -109,7 +122,9 @@ class _EditCardViewState extends State<EditCardView>
             card.name != _card.name ||
             card.jobTitle != _card.jobTitle ||
             card.company != _card.company ||
-            card.bio != _card.bio)) {
+            card.bio != _card.bio ||
+            card.showVerifiedBadge != _card.showVerifiedBadge ||
+            card.profileDesign != _card.profileDesign)) {
       _applyCard(card);
     }
     _loadOrganizationName();
@@ -241,7 +256,11 @@ class _EditCardViewState extends State<EditCardView>
   void _goToStep(int index) {
     if (index < 0 || index >= _steps.length) return;
     setState(() => _stepIndex = index);
-    _tab.animateTo(index);
+    _tab.animateTo(
+      index,
+      duration: TapLoopMotion.slow,
+      curve: TapLoopMotion.entrance,
+    );
   }
 
   void _nextStep() {
@@ -314,7 +333,37 @@ class _EditCardViewState extends State<EditCardView>
     }
   }
 
-  void _showAddContact() {
+  Future<void> _handleProfilePhotoChanged(String url) async {
+    if (_card.id.isEmpty) return;
+
+    final previousCard = _card;
+    final previousUnsaved = _unsaved;
+    final updatedCard = _card.copyWith(profilePhotoUrl: url);
+    setState(() {
+      _card = updatedCard;
+      _unsaved = previousUnsaved;
+    });
+
+    try {
+      await CardRepository.updateProfilePhoto(
+        cardId: updatedCard.id,
+        profilePhotoUrl: url,
+      );
+      final appCard = appState.currentCard;
+      if (appCard?.id == updatedCard.id) {
+        appState.updateCard(appCard!.copyWith(profilePhotoUrl: url));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _card = previousCard;
+        _unsaved = previousUnsaved;
+      });
+      rethrow;
+    }
+  }
+
+  void _showAddContact([ContactType initialType = ContactType.phone]) {
     if (_card.contactItems.length >= 8) {
       TapLoopToast.show(
         context,
@@ -329,12 +378,20 @@ class _EditCardViewState extends State<EditCardView>
         context: context,
         builder: (ctx) => Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(30),
           ),
           backgroundColor: ctx.bgCard,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 32,
+            vertical: 28,
+          ),
           child: SizedBox(
-            width: 480,
-            child: _AddContactSheet(onSubmit: onAdd, isDialog: true),
+            width: 920,
+            child: _AddContactSheet(
+              onSubmit: onAdd,
+              isDialog: true,
+              initialType: initialType,
+            ),
           ),
         ),
       );
@@ -343,7 +400,8 @@ class _EditCardViewState extends State<EditCardView>
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => _AddContactSheet(onSubmit: onAdd),
+        builder: (_) =>
+            _AddContactSheet(onSubmit: onAdd, initialType: initialType),
       );
     }
   }
@@ -355,11 +413,15 @@ class _EditCardViewState extends State<EditCardView>
         context: context,
         builder: (ctx) => Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(30),
           ),
           backgroundColor: ctx.bgCard,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 32,
+            vertical: 28,
+          ),
           child: SizedBox(
-            width: 480,
+            width: 920,
             child: _AddContactSheet(
               onSubmit: onSave,
               isDialog: true,
@@ -421,7 +483,9 @@ class _EditCardViewState extends State<EditCardView>
           TapLoopToastType.success,
         );
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo eliminar el formulario: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         TapLoopToast.show(
           context,
@@ -447,11 +511,15 @@ class _EditCardViewState extends State<EditCardView>
         context: context,
         builder: (ctx) => Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(30),
           ),
           backgroundColor: ctx.bgCard,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 32,
+            vertical: 28,
+          ),
           child: SizedBox(
-            width: 480,
+            width: 920,
             child: _AddSocialSheet(onSubmit: onAdd, isDialog: true),
           ),
         ),
@@ -473,11 +541,15 @@ class _EditCardViewState extends State<EditCardView>
         context: context,
         builder: (ctx) => Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(30),
           ),
           backgroundColor: ctx.bgCard,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 32,
+            vertical: 28,
+          ),
           child: SizedBox(
-            width: 480,
+            width: 920,
             child: _AddSocialSheet(
               onSubmit: onSave,
               isDialog: true,
@@ -651,8 +723,51 @@ class _EditCardViewState extends State<EditCardView>
   @override
   Widget build(BuildContext context) {
     final isDesktop = Responsive.isDesktop(context);
-    final stepProgress = (_stepIndex + 1) / _steps.length;
     final hasLinkedCard = appState.currentCard != null;
+    final headerTitle = ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: isDesktop ? 320 : 240,
+        maxWidth: isDesktop ? 560 : double.infinity,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Perfil digital',
+                style: GoogleFonts.outfit(
+                  fontSize: isDesktop ? 34 : 30,
+                  fontWeight: FontWeight.w800,
+                  color: context.textPrimary,
+                ),
+              ),
+              if (_unsaved) ...[
+                const SizedBox(width: 8),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Edita tu perfil, contacto, diseño y flujos de captura desde un mismo espacio.',
+            style: GoogleFonts.dmSans(
+              fontSize: 15,
+              color: context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+    final stepControls = hasLinkedCard ? _buildStepControls() : null;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -667,104 +782,24 @@ class _EditCardViewState extends State<EditCardView>
                 color: context.bgCard,
                 border: Border(bottom: BorderSide(color: context.borderColor)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: isDesktop ? 320 : 240,
-                      maxWidth: isDesktop ? 460 : double.infinity,
-                    ),
-                    child: Column(
+              child: isDesktop
+                  ? Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Tarjeta',
-                              style: GoogleFonts.outfit(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w800,
-                                color: context.textPrimary,
-                              ),
-                            ),
-                            if (_unsaved) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Edita tu perfil, contacto, diseño y flujos de captura desde un mismo espacio.',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: context.textSecondary,
-                          ),
-                        ),
+                        Expanded(child: headerTitle),
+                        if (stepControls != null) stepControls,
                       ],
-                    ),
-                  ),
-                  if (hasLinkedCard) ...[
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 14,
-                      runSpacing: 14,
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.bgCard,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: context.borderColor),
-                          ),
-                          child: Text(
-                            'Paso ${_stepIndex + 1} de ${_steps.length}: ${_steps[_stepIndex].label}',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: context.textPrimary,
-                            ),
-                          ),
-                        ),
-                        _StepNavButton(
-                          icon: Icons.arrow_back_rounded,
-                          enabled: _stepIndex > 0,
-                          onTap: _prevStep,
-                        ),
-                        _StepNavButton(
-                          icon: Icons.arrow_forward_rounded,
-                          enabled: _stepIndex < _steps.length - 1,
-                          onTap: _nextStep,
-                        ),
-                        _SaveButton(
-                          unsaved: _unsaved,
-                          saving: _saving,
-                          onSave: _onSave,
-                        ),
+                        headerTitle,
+                        if (stepControls != null) ...[
+                          const SizedBox(height: 14),
+                          stepControls,
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    LinearProgressIndicator(
-                      minHeight: 4,
-                      value: stepProgress,
-                      color: AppColors.primary,
-                      backgroundColor: context.bgSubtle,
-                    ),
-                  ],
-                ],
-              ),
             ),
             Expanded(
               child: hasLinkedCard
@@ -779,6 +814,51 @@ class _EditCardViewState extends State<EditCardView>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildStepControls() {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: context.bgCard,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: context.borderStrongSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.route_outlined, size: 14, color: AppColors.primary),
+              const SizedBox(width: 7),
+              Text(
+                'Paso ${_stepIndex + 1} de ${_steps.length}: ${_steps[_stepIndex].label}',
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: context.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        _StepNavButton(
+          icon: Icons.arrow_back_rounded,
+          enabled: _stepIndex > 0,
+          onTap: _prevStep,
+        ),
+        _StepNavButton(
+          icon: Icons.arrow_forward_rounded,
+          enabled: _stepIndex < _steps.length - 1,
+          onTap: _nextStep,
+        ),
+        _SaveButton(unsaved: _unsaved, saving: _saving, onSave: _onSave),
+      ],
     );
   }
 
@@ -806,7 +886,7 @@ class _EditCardViewState extends State<EditCardView>
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(24),
                   ),
-                  border: Border.all(color: context.borderColor),
+                  border: Border.all(color: context.borderStrongSoft),
                 ),
                 clipBehavior: Clip.hardEdge,
                 child: TabBarView(
@@ -838,11 +918,11 @@ class _EditCardViewState extends State<EditCardView>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 228,
+              width: 252,
               decoration: BoxDecoration(
                 color: context.bgCard,
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: context.borderColor),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: context.borderStrongSoft),
               ),
               child: _VerticalStepRail(
                 steps: _steps,
@@ -857,8 +937,8 @@ class _EditCardViewState extends State<EditCardView>
               child: Container(
                 decoration: BoxDecoration(
                   color: context.bgCard,
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: context.borderColor),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: context.borderStrongSoft),
                 ),
                 clipBehavior: Clip.hardEdge,
                 child: Column(
@@ -881,7 +961,7 @@ class _EditCardViewState extends State<EditCardView>
               ),
             ),
             const SizedBox(width: 18),
-            SizedBox(width: 320, child: _LivePreviewPanel(card: _card)),
+            SizedBox(width: 390, child: _LivePreviewPanel(card: _card)),
           ],
         ),
       ),
@@ -896,10 +976,20 @@ class _EditCardViewState extends State<EditCardView>
       bioCtrl: _bioCtrl,
       card: _card,
       companyLocked: _organizationName != null,
-      onPhotoChanged: (url) => setState(() {
-        _card = _card.copyWith(profilePhotoUrl: url);
-        _unsaved = true;
-      }),
+      onPhotoChanged: _handleProfilePhotoChanged,
+      onChanged: (c) {
+        final verifiedChanged = c.showVerifiedBadge != _card.showVerifiedBadge;
+        setState(() {
+          _card = c;
+          _unsaved = true;
+        });
+        final appCard = appState.currentCard;
+        if (verifiedChanged && appCard?.id == c.id) {
+          appState.updateCard(
+            appCard!.copyWith(showVerifiedBadge: c.showVerifiedBadge),
+          );
+        }
+      },
     ),
     _ContactTab(
       card: _card,
@@ -963,25 +1053,27 @@ class _StepNavButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      child: GestureDetector(
-        onTap: enabled ? onTap : null,
-        child: Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: context.bgCard,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: enabled ? AppColors.primary : context.borderColor,
-            ),
+    return TapLoopPressable(
+      onTap: enabled ? onTap : null,
+      enabled: enabled,
+      borderRadius: BorderRadius.circular(999),
+      hoverColor: TapLoopMotion.hoverSurfaceColor(context),
+      child: AnimatedContainer(
+        duration: TapLoopMotion.fast,
+        curve: TapLoopMotion.standard,
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: context.bgCard,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: enabled ? context.borderStrongSoft : context.borderColor,
           ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: enabled ? AppColors.primary : context.textMuted,
-          ),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: enabled ? context.textPrimary : context.textMuted,
         ),
       ),
     );
@@ -1004,7 +1096,7 @@ class _HorizontalStepSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 56,
+      height: 68,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         scrollDirection: Axis.horizontal,
@@ -1014,55 +1106,89 @@ class _HorizontalStepSelector extends StatelessWidget {
           final step = steps[i];
           final completed = completedSteps[i];
           final active = i == currentIndex;
-          return InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: () => onTap(i),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 24,
-                    height: 24,
-                    alignment: Alignment.center,
+          var hovered = false;
+          return StatefulBuilder(
+            builder: (context, setHover) {
+              return MouseRegion(
+                cursor: SystemMouseCursors.click,
+                onEnter: (_) => setHover(() => hovered = true),
+                onExit: (_) => setHover(() => hovered = false),
+                child: TapLoopPressable(
+                  onTap: () => onTap(i),
+                  borderRadius: BorderRadius.circular(16),
+                  hoverColor: Colors.transparent,
+                  child: AnimatedContainer(
+                    duration: TapLoopMotion.fast,
+                    curve: TapLoopMotion.standard,
+                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+                      color: active
+                          ? Colors.black
+                          : hovered
+                          ? TapLoopMotion.hoverSurfaceColor(context)
+                          : context.bgCard,
+                      borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: active ? AppColors.primary : context.borderColor,
+                        color: active ? Colors.black : context.borderStrongSoft,
                       ),
                     ),
-                    child: Text(
-                      '${i + 1}',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: active
-                            ? AppColors.primary
-                            : context.textSecondary,
-                      ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 24,
+                          height: 24,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: active
+                                  ? Colors.white
+                                  : context.borderStrongSoft,
+                            ),
+                          ),
+                          child: Text(
+                            '${i + 1}',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: active
+                                  ? Colors.black
+                                  : context.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          step.label,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            fontWeight: active
+                                ? FontWeight.w800
+                                : FontWeight.w700,
+                            color: active
+                                ? Colors.white
+                                : context.textSecondary,
+                          ),
+                        ),
+                        if (completed) ...[
+                          const SizedBox(width: 6),
+                          const Icon(
+                            Icons.check_circle_rounded,
+                            size: 14,
+                            color: AppColors.success,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    step.label,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                      color: active ? AppColors.primary : context.textSecondary,
-                    ),
-                  ),
-                  if (completed) ...[
-                    const SizedBox(width: 6),
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      size: 14,
-                      color: AppColors.success,
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
       ),
@@ -1086,72 +1212,104 @@ class _VerticalStepRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(14, 18, 14, 18),
+      padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
       itemCount: steps.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 4),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (_, i) {
         final step = steps[i];
         final completed = completedSteps[i];
         final active = i == currentIndex;
-        return InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => onTap(i),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            child: Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  alignment: Alignment.center,
+        var hovered = false;
+        return StatefulBuilder(
+          builder: (context, setHover) {
+            return MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setHover(() => hovered = true),
+              onExit: (_) => setHover(() => hovered = false),
+              child: TapLoopPressable(
+                onTap: () => onTap(i),
+                borderRadius: BorderRadius.circular(16),
+                hoverColor: Colors.transparent,
+                child: AnimatedContainer(
+                  duration: TapLoopMotion.fast,
+                  curve: TapLoopMotion.standard,
+                  constraints: const BoxConstraints(minHeight: 58),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
+                    color: active
+                        ? Colors.black
+                        : hovered
+                        ? TapLoopMotion.hoverSurfaceColor(context)
+                        : context.bgCard,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: active ? AppColors.primary : context.borderColor,
+                      color: active ? Colors.black : context.borderStrongSoft,
                     ),
                   ),
-                  child: Text(
-                    '${i + 1}',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: active ? AppColors.primary : context.textSecondary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
                   child: Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          step.label,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            fontWeight: active
-                                ? FontWeight.w700
-                                : FontWeight.w600,
+                      Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
                             color: active
-                                ? AppColors.primary
+                                ? Colors.white
+                                : context.borderStrongSoft,
+                          ),
+                        ),
+                        child: Text(
+                          '${i + 1}',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: active
+                                ? Colors.black
                                 : context.textSecondary,
                           ),
                         ),
                       ),
-                      if (completed) ...[
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.check_circle_rounded,
-                          size: 14,
-                          color: AppColors.success,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                step.label,
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 13,
+                                  fontWeight: active
+                                      ? FontWeight.w800
+                                      : FontWeight.w700,
+                                  color: active
+                                      ? Colors.white
+                                      : context.textSecondary,
+                                ),
+                              ),
+                            ),
+                            if (completed) ...[
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                size: 16,
+                                color: AppColors.success,
+                              ),
+                            ],
+                          ],
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -1186,15 +1344,15 @@ class _BottomStepNav extends StatelessWidget {
                 label: 'Paso anterior',
                 onPressed: hasPrev ? onPrev : null,
                 variant: TapLoopButtonVariant.outline,
-                height: 44,
+                height: 46,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: TapLoopButton(
-                label: hasNext ? 'Siguiente paso' : 'Ultimo paso',
+                label: hasNext ? 'Siguiente paso' : 'Último paso',
                 onPressed: hasNext ? onNext : null,
-                height: 44,
+                height: 46,
               ),
             ),
           ],
@@ -1214,11 +1372,17 @@ class _LivePreviewPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final slug = card.publicSlug.trim();
+    final publicPath = slug.isEmpty
+        ? 'app.taploop.com.mx'
+        : 'app.taploop.com.mx/$slug';
+    final publicUrl = 'https://$publicPath';
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: context.borderColor),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: context.borderStrongSoft),
       ),
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
@@ -1228,8 +1392,8 @@ class _LivePreviewPanel extends StatelessWidget {
             Text(
               'Vista previa',
               style: GoogleFonts.outfit(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
                 color: const Color(0xFF181411),
               ),
             ),
@@ -1243,20 +1407,52 @@ class _LivePreviewPanel extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF7F7F5),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: context.borderColor),
+                border: Border.all(color: context.borderStrongSoft),
               ),
-              child: Text(
-                'app.taploop.com.mx/${card.publicSlug}',
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  color: context.textSecondary,
-                ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.link_rounded,
+                    size: 16,
+                    color: context.textSecondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      publicPath,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Abrir perfil público',
+                    child: TapLoopPressable(
+                      onTap: () => html.window.open(publicUrl, '_blank'),
+                      borderRadius: BorderRadius.circular(12),
+                      hoverColor: TapLoopMotion.hoverSurfaceColor(context),
+                      child: SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Icon(
+                          Icons.open_in_new_rounded,
+                          size: 17,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
-            Center(child: DigitalProfilePreview(card: card, width: 240)),
+            Center(child: DigitalProfilePreview(card: card, width: 300)),
             const SizedBox(height: 24),
             Divider(color: context.borderColor, height: 1),
             const SizedBox(height: 16),
@@ -1308,7 +1504,8 @@ class _ProfileTab extends StatefulWidget {
   final TextEditingController bioCtrl;
   final DigitalCardModel card;
   final bool companyLocked;
-  final ValueChanged<String> onPhotoChanged;
+  final Future<void> Function(String) onPhotoChanged;
+  final ValueChanged<DigitalCardModel> onChanged;
 
   const _ProfileTab({
     required this.nameCtrl,
@@ -1318,6 +1515,7 @@ class _ProfileTab extends StatefulWidget {
     required this.card,
     required this.companyLocked,
     required this.onPhotoChanged,
+    required this.onChanged,
   });
 
   @override
@@ -1340,34 +1538,6 @@ class _ProfileTabState extends State<_ProfileTab> {
   @override
   void dispose() {
     super.dispose();
-  }
-
-  void _validateFields() {
-    setState(() {
-      // Validate name (max 50 chars)
-      final nameValidation = FieldValidators.validateMaxLength(
-        widget.nameCtrl.text,
-        FieldValidators.nameMaxLength,
-        'Nombre',
-      );
-      _nameError = nameValidation.errorMessage ?? '';
-
-      // Validate title (max 50 chars)
-      final titleValidation = FieldValidators.validateMaxLength(
-        widget.titleCtrl.text,
-        FieldValidators.jobTitleMaxLength,
-        'Cargo',
-      );
-      _titleError = titleValidation.errorMessage ?? '';
-
-      // Validate bio (max 100 chars)
-      final bioValidation = FieldValidators.validateMaxLength(
-        widget.bioCtrl.text,
-        FieldValidators.bioMaxLength,
-        'Biografía',
-      );
-      _bioError = bioValidation.errorMessage ?? '';
-    });
   }
 
   void _validateFieldsOnBlur(String fieldName) {
@@ -1404,29 +1574,37 @@ class _ProfileTabState extends State<_ProfileTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 1040),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.badge_outlined,
+                    size: 22,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Perfil',
+                    style: GoogleFonts.outfit(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 26),
               _AvatarPicker(
                 card: widget.card,
                 onPhotoChanged: widget.onPhotoChanged,
               ),
-              const SizedBox(height: 32),
-              Divider(color: context.borderColor, height: 1),
               const SizedBox(height: 28),
-              Text(
-                'Información personal',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: context.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 20),
               _EditInputField(
                 label: 'Nombre completo',
                 controller: widget.nameCtrl,
@@ -1436,10 +1614,17 @@ class _ProfileTabState extends State<_ProfileTab> {
                 onChanged: (_) => _validateFieldsOnBlur('name'),
               ),
               const SizedBox(height: 18),
+              _VerifiedProfileOption(
+                enabled: widget.card.showVerifiedBadge,
+                onChanged: (value) => widget.onChanged(
+                  widget.card.copyWith(showVerifiedBadge: value),
+                ),
+              ),
+              const SizedBox(height: 18),
               _EditInputField(
                 label: 'Cargo / Rol',
                 controller: widget.titleCtrl,
-                hint: 'Ej: Software Engineer',
+                hint: 'Ej: Representante de ventas',
                 error: _titleError,
                 maxLength: FieldValidators.jobTitleMaxLength,
                 onChanged: (_) => _validateFieldsOnBlur('title'),
@@ -1448,7 +1633,7 @@ class _ProfileTabState extends State<_ProfileTab> {
               _EditInputField(
                 label: 'Empresa',
                 controller: widget.companyCtrl,
-                hint: 'Ej: TapLoop Inc.',
+                hint: 'Ej: TapLoop',
                 enabled: !widget.companyLocked,
               ),
               if (widget.companyLocked) ...[
@@ -1461,25 +1646,6 @@ class _ProfileTabState extends State<_ProfileTab> {
                   ),
                 ),
               ],
-              const SizedBox(height: 28),
-              Divider(color: context.borderColor, height: 1),
-              const SizedBox(height: 28),
-              Text(
-                'Sobre ti',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: context.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Una breve presentación que verán las personas que abran tu tarjeta.',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  color: context.textSecondary,
-                ),
-              ),
               const SizedBox(height: 16),
               _EditInputField(
                 label: 'Biografía',
@@ -1501,7 +1667,7 @@ class _ProfileTabState extends State<_ProfileTab> {
 
 class _AvatarPicker extends StatefulWidget {
   final DigitalCardModel card;
-  final ValueChanged<String> onPhotoChanged;
+  final Future<void> Function(String) onPhotoChanged;
   const _AvatarPicker({required this.card, required this.onPhotoChanged});
 
   @override
@@ -1510,14 +1676,6 @@ class _AvatarPicker extends StatefulWidget {
 
 class _AvatarPickerState extends State<_AvatarPicker> {
   bool _uploading = false;
-
-  String _initials() {
-    final name = widget.card.name.trim();
-    if (name.isEmpty) return '?';
-    final parts = name.split(' ');
-    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    return name[0].toUpperCase();
-  }
 
   Future<void> _pickAndUpload() async {
     if (!kIsWeb) return;
@@ -1553,13 +1711,28 @@ class _AvatarPickerState extends State<_AvatarPicker> {
       return;
     }
 
+    if (!mounted) return;
+    final adjustment = await _showImageAdjustmentDialog(
+      context,
+      file: file,
+      title: 'Ajustar foto de perfil',
+      subtitle:
+          'Previsualiza el encuadre antes de guardarlo en tu perfil público.',
+      aspectRatio: 1,
+      shape: BoxShape.circle,
+    );
+    if (adjustment == null || !mounted) return;
+
     setState(() => _uploading = true);
     try {
-      final optimized = await optimizeWebRasterImage(
+      final optimized = await optimizeAdjustedWebRasterImage(
         file,
         maxDimension: 720,
         outputType: 'image/jpeg',
+        aspectRatio: 1,
         quality: 0.88,
+        zoom: adjustment.zoom,
+        position: adjustment.position,
         flattenToWhite: true,
       );
 
@@ -1583,7 +1756,7 @@ class _AvatarPickerState extends State<_AvatarPicker> {
           .from('avatars')
           .getPublicUrl(path);
 
-      widget.onPhotoChanged(rawUrl);
+      await widget.onPhotoChanged(rawUrl);
       if (mounted) {
         TapLoopToast.show(
           context,
@@ -1611,81 +1784,553 @@ class _AvatarPickerState extends State<_AvatarPicker> {
   @override
   Widget build(BuildContext context) {
     final photoUrl = widget.card.profilePhotoUrl;
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: _uploading ? null : _pickAndUpload,
-          child: Stack(
-            children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: AppColors.primary,
-                backgroundImage: photoUrl != null
-                    ? NetworkImage(photoUrl)
-                    : null,
-                child: photoUrl == null
-                    ? Text(
-                        _initials(),
-                        style: GoogleFonts.outfit(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      )
-                    : null,
+    var hoveringButton = false;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: _uploading ? null : _pickAndUpload,
+            child: Container(
+              width: 128,
+              height: 128,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: context.bgCard,
+                border: Border.all(color: context.borderStrongSoft),
               ),
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: context.textPrimary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: _uploading
-                      ? const Padding(
-                          padding: EdgeInsets.all(5),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.photo_camera,
-                          size: 14,
-                          color: Colors.white,
+              clipBehavior: Clip.antiAlias,
+              child: photoUrl != null
+                  ? Image.network(photoUrl, fit: BoxFit.cover)
+                  : Center(
+                      child: _uploading
+                          ? SizedBox(
+                              width: 26,
+                              height: 26,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.6,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          : Icon(
+                              Icons.person_outline_rounded,
+                              size: 42,
+                              color: AppColors.primary,
+                            ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          StatefulBuilder(
+            builder: (context, setHover) {
+              final hovered = hoveringButton && !_uploading;
+              return MouseRegion(
+                cursor: _uploading
+                    ? SystemMouseCursors.basic
+                    : SystemMouseCursors.click,
+                onEnter: (_) => setHover(() => hoveringButton = true),
+                onExit: (_) => setHover(() => hoveringButton = false),
+                child: GestureDetector(
+                  onTap: _uploading ? null : _pickAndUpload,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    width: 280,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 22,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: hovered
+                          ? TapLoopMotion.hoverSurfaceColor(context)
+                          : context.bgCard,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: hovered
+                            ? context.borderStrong
+                            : context.borderStrongSoft,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        Icon(
+                          Icons.photo_camera_outlined,
+                          size: 17,
+                          color: context.textPrimary,
                         ),
+                        const SizedBox(width: 9),
+                        Text(
+                          _uploading
+                              ? 'Subiendo foto...'
+                              : photoUrl == null
+                              ? 'Cargar foto de perfil'
+                              : 'Cambiar foto de perfil',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: context.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'JPG, PNG · máx 5 MB',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: context.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImageAdjustmentResult {
+  final double zoom;
+  final WebImageCropPosition position;
+
+  const _ImageAdjustmentResult({required this.zoom, required this.position});
+}
+
+Future<_ImageAdjustmentResult?> _showImageAdjustmentDialog(
+  BuildContext context, {
+  required html.File file,
+  required String title,
+  required String subtitle,
+  required double aspectRatio,
+  required BoxShape shape,
+}) {
+  return showDialog<_ImageAdjustmentResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+      child: _ImageAdjustmentDialog(
+        file: file,
+        title: title,
+        subtitle: subtitle,
+        aspectRatio: aspectRatio,
+        shape: shape,
+      ),
+    ),
+  );
+}
+
+class _ImageAdjustmentDialog extends StatefulWidget {
+  final html.File file;
+  final String title;
+  final String subtitle;
+  final double aspectRatio;
+  final BoxShape shape;
+
+  const _ImageAdjustmentDialog({
+    required this.file,
+    required this.title,
+    required this.subtitle,
+    required this.aspectRatio,
+    required this.shape,
+  });
+
+  @override
+  State<_ImageAdjustmentDialog> createState() => _ImageAdjustmentDialogState();
+}
+
+class _ImageAdjustmentDialogState extends State<_ImageAdjustmentDialog> {
+  late final String _objectUrl;
+  double _zoom = 1;
+  WebImageCropPosition _position = WebImageCropPosition.center;
+
+  @override
+  void initState() {
+    super.initState();
+    _objectUrl = html.Url.createObjectUrlFromBlob(widget.file);
+  }
+
+  @override
+  void dispose() {
+    html.Url.revokeObjectUrl(_objectUrl);
+    super.dispose();
+  }
+
+  Alignment _alignmentFor(WebImageCropPosition position) {
+    return switch (position) {
+      WebImageCropPosition.top => Alignment.topCenter,
+      WebImageCropPosition.center => Alignment.center,
+      WebImageCropPosition.bottom => Alignment.bottomCenter,
+      WebImageCropPosition.left => Alignment.centerLeft,
+      WebImageCropPosition.right => Alignment.centerRight,
+    };
+  }
+
+  String _labelFor(WebImageCropPosition position) {
+    return switch (position) {
+      WebImageCropPosition.top => 'Arriba',
+      WebImageCropPosition.center => 'Centro',
+      WebImageCropPosition.bottom => 'Abajo',
+      WebImageCropPosition.left => 'Izquierda',
+      WebImageCropPosition.right => 'Derecha',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final availableWidth = (MediaQuery.sizeOf(context).width - 124).clamp(
+      240.0,
+      420.0,
+    );
+    final previewWidth = widget.shape == BoxShape.circle
+        ? availableWidth.clamp(220.0, 280.0)
+        : availableWidth;
+    final previewHeight = widget.shape == BoxShape.circle
+        ? previewWidth
+        : previewWidth / widget.aspectRatio;
+    final positions = WebImageCropPosition.values;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 620),
+      child: Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+        ),
+        decoration: BoxDecoration(
+          color: context.bgCard,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: context.borderStrongSoft),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 34,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(30, 26, 30, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.title,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w800,
+                                    color: context.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  widget.subtitle,
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 15,
+                                    height: 1.3,
+                                    color: context.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close_rounded, size: 26),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Center(
+                        child: Container(
+                          width: previewWidth,
+                          height: previewHeight,
+                          decoration: BoxDecoration(
+                            color: context.bgSubtle,
+                            shape: widget.shape,
+                            borderRadius: widget.shape == BoxShape.circle
+                                ? null
+                                : BorderRadius.circular(18),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Transform.scale(
+                            scale: _zoom,
+                            child: Image.network(
+                              _objectUrl,
+                              fit: BoxFit.cover,
+                              alignment: _alignmentFor(_position),
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Zoom',
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          activeTrackColor: AppColors.primary,
+                          thumbColor: AppColors.primary,
+                          inactiveTrackColor: context.borderStrongSoft,
+                          trackHeight: 2.5,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 10,
+                          ),
+                        ),
+                        child: Slider(
+                          min: 1,
+                          max: 2.4,
+                          divisions: 7,
+                          value: _zoom,
+                          onChanged: (value) => setState(() => _zoom = value),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Posición',
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: positions.map((position) {
+                          final selected = _position == position;
+                          return _ImagePositionChip(
+                            label: _labelFor(position),
+                            selected: selected,
+                            onTap: () => setState(() => _position = position),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Divider(color: context.borderStrongSoft, height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(28, 16, 28, 18),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'Cancelar',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    SizedBox(
+                      width: 210,
+                      child: TapLoopButton(
+                        label: 'Usar imagen',
+                        height: 52,
+                        borderRadius: 999,
+                        icon: const Icon(Icons.check_rounded, size: 20),
+                        onPressed: () => Navigator.pop(
+                          context,
+                          _ImageAdjustmentResult(
+                            zoom: _zoom,
+                            position: _position,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(width: 20),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      ),
+    );
+  }
+}
+
+class _ImagePositionChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ImagePositionChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TapLoopPressable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      hoverColor: TapLoopMotion.hoverSurfaceColor(context),
+      child: AnimatedContainer(
+        duration: TapLoopMotion.fast,
+        curve: TapLoopMotion.standard,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.10)
+              : context.bgCard,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(
+            color: selected ? AppColors.primary : context.borderStrongSoft,
+            width: selected ? 1.6 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            GestureDetector(
-              onTap: _uploading ? null : _pickAndUpload,
-              child: Text(
-                'Cambiar foto',
-                style: GoogleFonts.outfit(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: context.textPrimary,
-                  decoration: TextDecoration.underline,
-                ),
+            if (selected) ...[
+              const Icon(
+                Icons.check_rounded,
+                size: 16,
+                color: AppColors.primary,
               ),
-            ),
-            const SizedBox(height: 4),
+              const SizedBox(width: 6),
+            ],
             Text(
-              'JPG, PNG · máx 5 MB',
-              style: GoogleFonts.dmSans(fontSize: 12, color: context.textMuted),
+              label,
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: selected ? AppColors.primary : context.textPrimary,
+              ),
             ),
           ],
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _VerifiedProfileOption extends StatelessWidget {
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+  static const _verifiedBlue = Color(0xFF2F5BFF);
+  static const _verifiedInactive = Color(0xFF94A3B8);
+
+  const _VerifiedProfileOption({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = enabled ? _verifiedBlue : _verifiedInactive;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: enabled
+              ? _verifiedBlue.withValues(alpha: 0.24)
+              : context.borderStrongSoft,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: enabled ? 0.1 : 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.verified_rounded, size: 21, color: accent),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Verificado',
+                      style: GoogleFonts.outfit(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: enabled ? 0.1 : 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        'Premium',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Muestra una insignia junto a tu nombre público.',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _EditorVisibilitySwitch(
+            value: enabled,
+            onChanged: onChanged,
+            activeColor: _verifiedBlue,
+            inactiveColor: _verifiedInactive,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1695,7 +2340,7 @@ class _AvatarPickerState extends State<_AvatarPicker> {
 class _ContactTab extends StatefulWidget {
   final DigitalCardModel card;
   final ValueChanged<DigitalCardModel> onChanged;
-  final VoidCallback onAdd;
+  final ValueChanged<ContactType> onAdd;
   final ValueChanged<ContactItemModel> onEdit;
   const _ContactTab({
     required this.card,
@@ -1709,51 +2354,63 @@ class _ContactTab extends StatefulWidget {
 }
 
 class _ContactTabState extends State<_ContactTab> {
-  void _onReorder(int oldIndex, int newIndex) {
-    final items = [...widget.card.contactItems];
-    if (newIndex > oldIndex) newIndex -= 1;
-    final moved = items.removeAt(oldIndex);
-    items.insert(newIndex, moved);
-    final normalized = items
-        .asMap()
-        .entries
-        .map((e) => e.value.copyWith(sortOrder: e.key))
-        .toList();
-    widget.onChanged(widget.card.copyWith(contactItems: normalized));
-  }
-
   @override
   Widget build(BuildContext context) {
     final contacts = [...widget.card.contactItems]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final usedIds = <String>{};
+    final rows = <({ContactType type, ContactItemModel? item})>[];
+    for (final type in ContactType.values) {
+      ContactItemModel? match;
+      for (final item in contacts) {
+        if (item.type == type && !usedIds.contains(item.id)) {
+          match = item;
+          usedIds.add(item.id);
+          break;
+        }
+      }
+      rows.add((type: type, item: match));
+    }
+    for (final item in contacts) {
+      if (!usedIds.contains(item.id)) {
+        rows.add((type: item.type, item: item));
+      }
+    }
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 1040),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Icon(
+                    Icons.forum_outlined,
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Contacto',
+                          'Información de contacto',
                           style: GoogleFonts.outfit(
-                            fontSize: 22,
+                            fontSize: 24,
                             fontWeight: FontWeight.w800,
                             color: context.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${contacts.where((c) => c.isVisible).length} de ${contacts.length} visibles',
+                          'Completa tus datos y decide cuáles aparecerán como acciones en tu perfil público.',
                           style: GoogleFonts.dmSans(
-                            fontSize: 13,
+                            fontSize: 14,
                             color: context.textSecondary,
                           ),
                         ),
@@ -1761,66 +2418,50 @@ class _ContactTabState extends State<_ContactTab> {
                     ),
                   ),
                   TapLoopButton(
-                    label: 'Añadir',
-                    width: 120,
-                    height: 38,
+                    label: 'Añadir contacto',
+                    width: 224,
+                    height: 46,
+                    borderRadius: 999,
                     icon: const Icon(Icons.add_rounded, size: 16),
-                    onPressed: widget.onAdd,
+                    onPressed: () => widget.onAdd(ContactType.phone),
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
-              if (contacts.isEmpty)
-                _EmptyState(
-                  message: 'Sin información de contacto',
-                  hint: 'Añade tu teléfono, email u otros datos.',
-                )
-              else ...[
-                ReorderableListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  buildDefaultDragHandles: false,
-                  itemCount: contacts.length,
-                  onReorder: _onReorder,
-                  itemBuilder: (context, i) {
-                    final item = contacts[i];
-                    return _ContactRow(
-                      key: ValueKey('contact_${item.id}'),
-                      index: i,
-                      item: item,
-                      onEdit: () => widget.onEdit(item),
-                      onToggle: (val) {
-                        final updated = contacts
-                            .map(
-                              (c) => c.id == item.id
-                                  ? c.copyWith(isVisible: val)
-                                  : c,
-                            )
-                            .toList();
-                        widget.onChanged(
-                          widget.card.copyWith(contactItems: updated),
-                        );
-                      },
-                      onDelete: () {
-                        final updated = contacts
-                            .where((c) => c.id != item.id)
-                            .toList();
-                        widget.onChanged(
-                          widget.card.copyWith(contactItems: updated),
-                        );
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Arrastra para ordenar.',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 11,
-                    color: context.textMuted,
-                  ),
-                ),
-              ],
+              const SizedBox(height: 24),
+              ...rows.map((row) {
+                final item = row.item;
+                return _ContactRow(
+                  key: ValueKey(item?.id ?? 'contact_empty_${row.type.name}'),
+                  type: row.type,
+                  item: item,
+                  onAdd: () => widget.onAdd(row.type),
+                  onEdit: item == null ? null : () => widget.onEdit(item),
+                  onToggle: item == null
+                      ? null
+                      : (val) {
+                          final updated = contacts
+                              .map(
+                                (c) => c.id == item.id
+                                    ? c.copyWith(isVisible: val)
+                                    : c,
+                              )
+                              .toList();
+                          widget.onChanged(
+                            widget.card.copyWith(contactItems: updated),
+                          );
+                        },
+                  onDelete: item == null
+                      ? null
+                      : () {
+                          final updated = contacts
+                              .where((c) => c.id != item.id)
+                              .toList();
+                          widget.onChanged(
+                            widget.card.copyWith(contactItems: updated),
+                          );
+                        },
+                );
+              }),
             ],
           ),
         ),
@@ -1830,15 +2471,17 @@ class _ContactTabState extends State<_ContactTab> {
 }
 
 class _ContactRow extends StatelessWidget {
-  final int index;
-  final ContactItemModel item;
-  final ValueChanged<bool> onToggle;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final ContactType type;
+  final ContactItemModel? item;
+  final VoidCallback onAdd;
+  final ValueChanged<bool>? onToggle;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   const _ContactRow({
     super.key,
-    required this.index,
+    required this.type,
     required this.item,
+    required this.onAdd,
     required this.onToggle,
     required this.onEdit,
     required this.onDelete,
@@ -1846,78 +2489,195 @@ class _ContactRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    final active = item != null;
+    final visible = item?.isVisible ?? false;
+    final value = item?.value.trim();
+    final label = item?.displayLabel ?? _contactTypeLabel(type);
+    final contactColor = _contactTypeColor(type);
+    final displayedValue = active && value != null && value.isNotEmpty
+        ? value
+        : _contactTypePlaceholder(type);
+    final statusText = active ? (visible ? 'Visible' : 'Oculto') : 'Sin dato';
+    final statusColor = active
+        ? (visible ? AppColors.success : context.textMuted)
+        : context.textMuted;
+    final rowTap = active ? onEdit : onAdd;
+    Widget separator({double height = 32}) =>
+        Container(width: 1, height: height, color: const Color(0xFFE1E8F0));
+    Widget statusControls() => SizedBox(
+      width: active ? 128 : 84,
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Container(
-            width: 28,
-            height: 28,
+            width: 7,
+            height: 7,
             decoration: BoxDecoration(
-              color: context.bgCard,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: context.borderColor),
+              color: statusColor,
+              shape: BoxShape.circle,
             ),
-            child: ReorderableDragStartListener(
-              index: index,
-              child: Icon(
-                Icons.drag_indicator_rounded,
-                color: context.textMuted,
-                size: 16,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              statusText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: statusColor,
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.displayLabel,
-                  style: GoogleFonts.outfit(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: item.isVisible
-                        ? context.textPrimary
-                        : context.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  item.value,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    color: context.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+          if (active) ...[
+            const SizedBox(width: 8),
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: _EditorVisibilitySwitch(
+                value: visible,
+                activeColor: AppColors.success,
+                onChanged: onToggle ?? (_) => onAdd(),
+              ),
             ),
-          ),
-          Switch.adaptive(
-            value: item.isVisible,
-            onChanged: onToggle,
-            activeTrackColor: AppColors.primary,
-          ),
-          IconButton(
-            tooltip: 'Editar contacto',
-            onPressed: onEdit,
-            icon: Icon(
-              Icons.edit_outlined,
-              color: context.textSecondary,
-              size: 20,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Eliminar contacto',
-            onPressed: onDelete,
-            icon: const Icon(
-              Icons.delete_outline,
-              color: AppColors.error,
-              size: 20,
-            ),
-          ),
+          ],
         ],
+      ),
+    );
+    Widget actionButtons() => SizedBox(
+      width: active ? 66 : 34,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          IconButton(
+            tooltip: active ? 'Editar contacto' : 'Añadir contacto',
+            onPressed: active ? onEdit : onAdd,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 34),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              active ? Icons.edit_outlined : Icons.add_rounded,
+              color: const Color(0xFF334155),
+              size: 21,
+            ),
+          ),
+          if (active)
+            IconButton(
+              tooltip: 'Eliminar contacto',
+              onPressed: onDelete,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 34),
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(
+                Icons.delete_outline,
+                color: AppColors.error,
+                size: 23,
+              ),
+            ),
+        ],
+      ),
+    );
+    Widget buildIcon() => SizedBox(
+      width: 28,
+      height: 34,
+      child: Center(
+        child: _contactTypeIcon(type, color: contactColor, size: 25),
+      ),
+    );
+    Widget buildLeading(double labelWidth) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        buildIcon(),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: labelWidth,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.outfit(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: active ? const Color(0xFF0F172A) : context.textMuted,
+            ),
+          ),
+        ),
+      ],
+    );
+    Widget buildValue() => Text(
+      displayedValue,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.dmSans(
+        fontSize: 15,
+        height: 1.2,
+        fontWeight: FontWeight.w500,
+        color: active ? const Color(0xFF475569) : context.textMuted,
+      ),
+    );
+    var hoveringRow = false;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: StatefulBuilder(
+        builder: (context, setHover) {
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setHover(() => hoveringRow = true),
+            onExit: (_) => setHover(() => hoveringRow = false),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+              child: InkWell(
+                onTap: rowTap,
+                borderRadius: BorderRadius.circular(18),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: hoveringRow
+                        ? TapLoopMotion.hoverSurfaceColor(context)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: hoveringRow
+                          ? const Color(0xFFCFE0F2)
+                          : const Color(0xFFE0E8F1),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 690;
+                      final leadingWidth = compact ? 82.0 : 98.0;
+                      final valueGap = compact ? 9.0 : 14.0;
+                      final statusGap = compact ? 7.0 : 10.0;
+
+                      return Row(
+                        children: [
+                          buildLeading(leadingWidth),
+                          SizedBox(width: valueGap),
+                          separator(),
+                          SizedBox(width: valueGap),
+                          Expanded(child: buildValue()),
+                          SizedBox(width: statusGap),
+                          statusControls(),
+                          SizedBox(width: statusGap),
+                          separator(),
+                          const SizedBox(width: 8),
+                          actionButtons(),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1960,10 +2720,10 @@ class _SocialTabState extends State<_SocialTab> {
     final socials = [...widget.card.socialLinks]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1975,38 +2735,62 @@ class _SocialTabState extends State<_SocialTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Redes sociales',
+                          'Enlaces principales',
                           style: GoogleFonts.outfit(
-                            fontSize: 22,
+                            fontSize: 24,
                             fontWeight: FontWeight.w800,
                             color: context.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${socials.where((s) => s.isVisible).length} de ${socials.length} visibles',
+                          'Gestiona los enlaces que aparecen en tu perfil. Ordénalos, edítalos y destaca los importantes.',
                           style: GoogleFonts.dmSans(
-                            fontSize: 13,
+                            fontSize: 14,
                             color: context.textSecondary,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  TapLoopButton(
-                    label: 'Añadir',
-                    width: 120,
-                    height: 38,
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    onPressed: widget.onAdd,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.bgSubtle,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: context.borderStrongSoft),
+                    ),
+                    child: Text(
+                      '${socials.length}/8',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: context.textSecondary,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TapLoopButton(
+                  label: 'Agregar enlace',
+                  width: 220,
+                  height: 50,
+                  borderRadius: 999,
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  onPressed: widget.onAdd,
+                ),
+              ),
+              const SizedBox(height: 18),
               if (socials.isEmpty)
                 _EmptyState(
-                  message: 'Sin redes sociales',
-                  hint: 'Añade LinkedIn, Instagram y más.',
+                  message: 'Sin enlaces visibles',
+                  hint: 'Añade WhatsApp, sitio web, Instagram u otro canal.',
                 )
               else ...[
                 ReorderableListView.builder(
@@ -2046,13 +2830,9 @@ class _SocialTabState extends State<_SocialTab> {
                     );
                   },
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Arrastra para ordenar.',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 11,
-                    color: context.textMuted,
-                  ),
+                const SizedBox(height: 8),
+                _DragHint(
+                  text: 'Arrastra los enlaces para cambiar su prioridad.',
                 ),
               ],
             ],
@@ -2080,81 +2860,427 @@ class _SocialRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    var hoveringRow = false;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: context.bgCard,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: context.borderColor),
-            ),
-            child: ReorderableDragStartListener(
-              index: index,
-              child: Icon(
-                Icons.drag_indicator_rounded,
-                color: context.textMuted,
-                size: 16,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: StatefulBuilder(
+        builder: (context, setHover) {
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setHover(() => hoveringRow = true),
+            onExit: (_) => setHover(() => hoveringRow = false),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(
+                color: hoveringRow
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: hoveringRow
+                      ? context.borderStrongSoft.withValues(alpha: 0.92)
+                      : context.borderStrongSoft,
+                ),
+              ),
+              child: Row(
+                children: [
+                  MouseRegion(
+                    cursor: SystemMouseCursors.grab,
+                    child: ReorderableDragStartListener(
+                      index: index,
+                      child: Icon(
+                        Icons.drag_indicator_rounded,
+                        color: context.textPrimary,
+                        size: 25,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _socialPlatformIcon(
+                    link.platform,
+                    color: _socialPlatformColor(link.platform),
+                    size: 29,
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          link.label,
+                          style: GoogleFonts.outfit(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: link.isVisible
+                                ? context.textPrimary
+                                : context.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          link.url,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: context.textSecondary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: _EditorVisibilitySwitch(
+                      value: link.isVisible,
+                      onChanged: onToggle,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Destacar enlace',
+                    onPressed: () {},
+                    icon: Icon(
+                      Icons.star_border_rounded,
+                      color: context.textSecondary,
+                      size: 20,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Editar enlace',
+                    onPressed: onEdit,
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      color: context.textSecondary,
+                      size: 20,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Eliminar enlace',
+                    onPressed: onDelete,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: AppColors.error,
+                      size: 20,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  link.label,
-                  style: GoogleFonts.outfit(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: link.isVisible
-                        ? context.textPrimary
-                        : context.textMuted,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  link.url,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    color: context.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: link.isVisible,
-            onChanged: onToggle,
-            activeTrackColor: AppColors.primary,
-          ),
-          IconButton(
-            tooltip: 'Editar red social',
-            onPressed: onEdit,
-            icon: Icon(
-              Icons.edit_outlined,
-              color: context.textSecondary,
-              size: 20,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Eliminar red',
-            onPressed: onDelete,
-            icon: const Icon(
-              Icons.delete_outline,
-              color: AppColors.error,
-              size: 20,
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
+}
+
+class _DragHint extends StatelessWidget {
+  final String text;
+  const _DragHint({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(Icons.drag_indicator_rounded, size: 15, color: context.textMuted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: context.textMuted,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditorVisibilitySwitch extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Color activeColor;
+  final Color? inactiveColor;
+  const _EditorVisibilitySwitch({
+    required this.value,
+    required this.onChanged,
+    this.activeColor = AppColors.primary,
+    this.inactiveColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final offColor = inactiveColor ?? context.textMuted;
+    return Transform.scale(
+      scale: 0.86,
+      child: Switch.adaptive(
+        value: value,
+        onChanged: onChanged,
+        activeTrackColor: activeColor.withValues(alpha: 0.26),
+        activeThumbColor: activeColor,
+        inactiveTrackColor: offColor.withValues(alpha: 0.22),
+        inactiveThumbColor: offColor,
+      ),
+    );
+  }
+}
+
+class _EditorDialogLabel extends StatelessWidget {
+  final String text;
+  const _EditorDialogLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: GoogleFonts.outfit(
+        fontSize: 15,
+        fontWeight: FontWeight.w800,
+        color: context.textPrimary,
+      ),
+    );
+  }
+}
+
+class _SuggestedUsePill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  const _SuggestedUsePill({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: TapLoopMotion.fast,
+              curve: TapLoopMotion.standard,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+              decoration: BoxDecoration(
+                color: hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: hovering
+                      ? AppColors.primary
+                      : context.borderStrongSoft,
+                  width: hovering ? 1.4 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 18,
+                    color: hovering ? AppColors.primary : context.textPrimary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: hovering
+                            ? AppColors.primary
+                            : context.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FieldChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _FieldChip({
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        final color = selected || hovering
+            ? AppColors.primary
+            : context.textSecondary;
+        return MouseRegion(
+          cursor: onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: TapLoopMotion.fast,
+              curve: TapLoopMotion.standard,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppColors.primary.withValues(alpha: 0.08)
+                    : hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: selected || hovering
+                      ? AppColors.primary
+                      : context.borderStrongSoft,
+                  width: selected || hovering ? 1.4 : 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 17, color: color),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: selected
+                          ? context.textPrimary
+                          : hovering
+                          ? AppColors.primary
+                          : context.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+Widget _contactTypeIcon(
+  ContactType type, {
+  required Color color,
+  required double size,
+}) {
+  if (type == ContactType.whatsapp) {
+    return FaIcon(FontAwesomeIcons.whatsapp, color: color, size: size);
+  }
+  final icon = switch (type) {
+    ContactType.phone => Icons.phone_outlined,
+    ContactType.email => Icons.email_outlined,
+    ContactType.address => Icons.location_on_outlined,
+    ContactType.website => Icons.language_rounded,
+    ContactType.whatsapp => Icons.chat_outlined,
+  };
+  return Icon(icon, color: color, size: size);
+}
+
+Color _contactTypeColor(ContactType type) {
+  return switch (type) {
+    ContactType.phone => const Color(0xFF16A34A),
+    ContactType.whatsapp => const Color(0xFF25D366),
+    ContactType.email => const Color(0xFFEF4444),
+    ContactType.address => const Color(0xFFF59E0B),
+    ContactType.website => const Color(0xFF2563EB),
+  };
+}
+
+String _contactTypeLabel(ContactType type) {
+  return switch (type) {
+    ContactType.phone => 'Teléfono',
+    ContactType.whatsapp => 'WhatsApp',
+    ContactType.email => 'Email',
+    ContactType.address => 'Dirección',
+    ContactType.website => 'Sitio web',
+  };
+}
+
+String _contactTypePlaceholder(ContactType type) {
+  return switch (type) {
+    ContactType.phone => '+52 55 1234 5678',
+    ContactType.whatsapp => '+52 55 1234 5678',
+    ContactType.email => 'tu@email.com',
+    ContactType.address => 'Ciudad de México, CDMX',
+    ContactType.website => 'https://tuwebsite.com',
+  };
+}
+
+Widget _socialPlatformIcon(
+  SocialPlatform platform, {
+  required Color color,
+  required double size,
+}) {
+  final FaIconData? brandIcon = switch (platform) {
+    SocialPlatform.linkedin => FontAwesomeIcons.linkedinIn,
+    SocialPlatform.instagram => FontAwesomeIcons.instagram,
+    SocialPlatform.facebook => FontAwesomeIcons.facebookF,
+    SocialPlatform.tiktok => FontAwesomeIcons.tiktok,
+    SocialPlatform.twitter => FontAwesomeIcons.xTwitter,
+    SocialPlatform.youtube => FontAwesomeIcons.youtube,
+    SocialPlatform.github => FontAwesomeIcons.github,
+    SocialPlatform.calendly || SocialPlatform.custom => null,
+  };
+  if (brandIcon != null) {
+    return FaIcon(brandIcon, color: color, size: size);
+  }
+  final icon = switch (platform) {
+    SocialPlatform.calendly => Icons.event_available_outlined,
+    SocialPlatform.custom => Icons.link_rounded,
+    SocialPlatform.linkedin ||
+    SocialPlatform.instagram ||
+    SocialPlatform.facebook ||
+    SocialPlatform.tiktok ||
+    SocialPlatform.twitter ||
+    SocialPlatform.youtube ||
+    SocialPlatform.github => Icons.link_rounded,
+  };
+  return Icon(icon, color: color, size: size);
+}
+
+Color _socialPlatformColor(SocialPlatform platform) {
+  return switch (platform) {
+    SocialPlatform.instagram => const Color(0xFFE83E7C),
+    SocialPlatform.facebook => const Color(0xFF2563EB),
+    SocialPlatform.tiktok => const Color(0xFF00D1C7),
+    SocialPlatform.youtube => const Color(0xFFEF4444),
+    SocialPlatform.twitter => const Color(0xFF1D9BF0),
+    SocialPlatform.linkedin => const Color(0xFF0A66C2),
+    SocialPlatform.calendly => const Color(0xFF006BFF),
+    SocialPlatform.github => const Color(0xFF6E5494),
+    SocialPlatform.custom => AppColors.primary,
+  };
 }
 
 class _DesignTab extends StatelessWidget {
@@ -2167,232 +3293,179 @@ class _DesignTab extends StatelessWidget {
     final isDesktop = Responsive.isDesktop(context);
     final settingsContent = Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: const BoxConstraints(maxWidth: 760),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Tipo de Layout ────────────────────────────────
-            Text(
-              'Tipo de Layout',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: context.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Cambia completamente la estructura visual de tu tarjeta.',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: context.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: CardLayoutStyle.values.map((layout) {
-                return _LayoutChip(
-                  layout: layout,
-                  selected: card.layoutStyle == layout,
-                  onTap: () => onChanged(card.copyWith(layoutStyle: layout)),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 32),
-
-            // ── Color de Texto ───────────────────────────────
-            Text(
-              'Color de Texto',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: context.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Define el color de todos tus textos.',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: context.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _TextColorButton(
-                  label: 'Blanco',
-                  isDark: false,
-                  selected: !card.textColorIsDark,
-                  onTap: () => onChanged(
-                    card.copyWith(themeStyle: CardThemeStyle.white),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 620;
+                final titleBlock = Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.palette_outlined,
+                            size: 22,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Diseño de tu perfil',
+                              style: GoogleFonts.outfit(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                color: context.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Elige un estilo profesional y personaliza tu perfil en segundos.',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                _TextColorButton(
-                  label: 'Negro',
-                  isDark: true,
-                  selected: card.textColorIsDark,
-                  onTap: () => onChanged(
-                    card.copyWith(themeStyle: CardThemeStyle.black),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-
-            // ── Fondo de tarjeta ──────────────────────────────
-            Text(
-              'Fondo de tarjeta',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: context.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Personaliza el color y estilo del fondo.',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: context.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: CardBgStyle.values.map((s) {
-                return _BgStyleChip(
-                  style: s,
-                  selected: card.bgStyle == s,
-                  onTap: () => onChanged(card.copyWith(bgStyle: s)),
                 );
-              }).toList(),
+                final tipsButton = _DesignTipsButton(onTap: () {});
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [titleBlock]),
+                      const SizedBox(height: 14),
+                      tipsButton,
+                    ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [titleBlock, const SizedBox(width: 18), tipsButton],
+                );
+              },
             ),
-            const SizedBox(height: 20),
-            Text(
-              'Color de fondo',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: context.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children:
-                  const [
-                    Colors.white,
-                    Color(0xFFF4F4F6),
-                    Color(0xFFF0F4FF),
-                    Color(0xFFF0FFF4),
-                    Color(0xFFFFF8F0),
-                    Color(0xFF0D0D0D),
-                    Color(0xFF1C1C2E),
-                    Color(0xFF6C4FE8),
-                  ].map((c) {
-                    return _ColorDot(
-                      color: c,
-                      selected: card.bgColor == c,
-                      onTap: () => onChanged(card.copyWith(bgColor: c)),
-                    );
-                  }).toList(),
-            ),
-            const SizedBox(height: 12),
-            _CustomColorPanel(
-              color: card.bgColor ?? Colors.white,
-              onChanged: (c) => onChanged(card.copyWith(bgColor: c)),
-            ),
-            if (card.bgStyle == CardBgStyle.gradient ||
-                card.bgStyle == CardBgStyle.mesh) ...[
-              const SizedBox(height: 20),
-              Text(
-                'Color secundario',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: context.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
+            const SizedBox(height: 26),
+            _DesignSectionCard(
+              title: 'Estilo de perfil',
+              child: Wrap(
                 spacing: 12,
                 runSpacing: 12,
                 children:
                     const [
-                      Color(0xFF6C4FE8),
-                      Color(0xFF1A73E8),
-                      Color(0xFF1A8C4E),
-                      Color(0xFFD93025),
-                      Color(0xFF0D0D0D),
-                      Color(0xFF00ACC1),
-                      Color(0xFFF5A623),
-                      Color(0xFFEF6820),
-                    ].map((c) {
-                      return _ColorDot(
-                        color: c,
-                        selected: card.bgColorEnd == c,
-                        onTap: () => onChanged(card.copyWith(bgColorEnd: c)),
+                      CardProfileDesign.classic,
+                      CardProfileDesign.modern,
+                    ].map((design) {
+                      return _ProfileDesignChip(
+                        design: design,
+                        selected: card.profileDesign == design,
+                        onTap: () => onChanged(
+                          card.copyWith(
+                            profileDesign: design,
+                            layoutStyle: design.compatibleLayoutStyle,
+                          ),
+                        ),
                       );
                     }).toList(),
               ),
-              const SizedBox(height: 12),
-              _CustomColorPanel(
-                color: card.bgColorEnd ?? const Color(0xFF6C4FE8),
-                onChanged: (c) => onChanged(card.copyWith(bgColorEnd: c)),
-              ),
-            ],
-            const SizedBox(height: 32),
-
-            // ── Color de Botones ─────────────────────────────
-            Text(
-              'Color de Botones',
-              style: GoogleFonts.outfit(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: context.textPrimary,
-              ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Se aplica a botones y detalles de tu tarjeta.',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: context.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children:
-                  const [
-                    Color(0xFFEF6820),
-                    Color(0xFF6C4FE8),
-                    Color(0xFF1A73E8),
-                    Color(0xFF1A8C4E),
-                    Color(0xFFD93025),
-                    Color(0xFF0D0D0D),
-                    Color(0xFF00ACC1),
-                    Color(0xFFF5A623),
-                  ].map((c) {
-                    return _ColorDot(
-                      color: c,
-                      selected: card.primaryColor == c,
-                      onTap: () => onChanged(card.copyWith(primaryColor: c)),
-                    );
-                  }).toList(),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                const Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Identidad visual',
+                  style: GoogleFonts.outfit(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: context.textPrimary,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 14),
-            _CustomColorPanel(
-              color: card.primaryColor,
-              onChanged: (c) => onChanged(card.copyWith(primaryColor: c)),
+            _DesignSectionCard(
+              title: 'Color principal',
+              child: _DesignColorPicker(
+                color: card.primaryColor,
+                palette: _primaryDesignPalette,
+                onChanged: (c) => onChanged(card.copyWith(primaryColor: c)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _DesignSectionCard(
+              title: 'Color de acento',
+              child: _DesignColorPicker(
+                color: card.bgColorEnd ?? card.primaryColor,
+                palette: _accentDesignPalette,
+                onChanged: (c) => onChanged(card.copyWith(bgColorEnd: c)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _DesignSectionCard(
+              title: 'Fondo',
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _DesignChoiceChip(
+                    label: 'Claro',
+                    selected: !_isDarkDesignColor(card.bgColor ?? Colors.white),
+                    onTap: () => onChanged(
+                      card.copyWith(
+                        bgStyle: CardBgStyle.plain,
+                        bgColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                  _DesignChoiceChip(
+                    label: 'Oscuro',
+                    selected: _isDarkDesignColor(card.bgColor ?? Colors.white),
+                    onTap: () => onChanged(
+                      card.copyWith(
+                        bgStyle: CardBgStyle.plain,
+                        bgColor: Colors.black,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _DesignSectionCard(
+              title: 'Fondo y portada sin imagen',
+              child: _DesignColorPicker(
+                color: card.bgColor ?? Colors.white,
+                palette: _backgroundDesignPalette,
+                onChanged: (c) => onChanged(card.copyWith(bgColor: c)),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _DesignSectionCard(
+              title: 'Efecto de fondo',
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: CardBgStyle.values.map((s) {
+                  return _BgStyleChip(
+                    style: s,
+                    selected: card.bgStyle == s,
+                    onTap: () => onChanged(card.copyWith(bgStyle: s)),
+                  );
+                }).toList(),
+              ),
             ),
             const SizedBox(height: 48),
           ],
@@ -2430,6 +3503,636 @@ class _DesignTab extends StatelessWidget {
   }
 }
 
+const _primaryDesignPalette = [
+  AppColors.primary,
+  Color(0xFF10B981),
+  Color(0xFF7C3AED),
+  Color(0xFFF43F5E),
+  Color(0xFFF97316),
+  Colors.black,
+];
+
+const _accentDesignPalette = [
+  AppColors.primary,
+  Color(0xFF06B6D4),
+  Color(0xFF84CC16),
+  Color(0xFFF59E0B),
+  Color(0xFFEC4899),
+  Colors.black,
+];
+
+const _backgroundDesignPalette = [
+  Colors.white,
+  Color(0xFFF4F4F6),
+  Color(0xFFF0F4FF),
+  Color(0xFFF0FFF4),
+  Color(0xFFFFF8F0),
+  Color(0xFF0D0D0D),
+  Color(0xFF1C1C2E),
+  Color(0xFF6C4FE8),
+];
+
+bool _isDarkDesignColor(Color color) {
+  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark;
+}
+
+String _designHex(Color color) {
+  final argb = color.toARGB32();
+  return '#${(argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+}
+
+class _DesignTipsButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _DesignTipsButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: TapLoopMotion.fast,
+              curve: TapLoopMotion.standard,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: hovering
+                    ? AppColors.primary.withValues(alpha: 0.06)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.lightbulb_outline_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Consejos de diseño',
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DesignSectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _DesignSectionCard({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderStrongSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.outfit(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _DesignColorPicker extends StatelessWidget {
+  final Color color;
+  final List<Color> palette;
+  final ValueChanged<Color> onChanged;
+
+  const _DesignColorPicker({
+    required this.color,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  Future<void> _openColorDialog(BuildContext context) async {
+    final selected = await showDialog<Color>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        child: _AdvancedColorDialog(initialColor: color),
+      ),
+    );
+    if (selected != null) onChanged(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TapLoopPressable(
+          onTap: () => _openColorDialog(context),
+          borderRadius: BorderRadius.circular(13),
+          hoverColor: TapLoopMotion.hoverSurfaceColor(context),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+            decoration: BoxDecoration(
+              color: context.bgCard,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: context.borderStrongSoft),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: context.borderStrongSoft),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    _designHex(color),
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.tune_rounded,
+                  size: 20,
+                  color: context.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: palette.map((c) {
+            return _ColorDot(
+              color: c,
+              selected: color == c,
+              onTap: () => onChanged(c),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _AdvancedColorDialog extends StatefulWidget {
+  final Color initialColor;
+
+  const _AdvancedColorDialog({required this.initialColor});
+
+  @override
+  State<_AdvancedColorDialog> createState() => _AdvancedColorDialogState();
+}
+
+class _AdvancedColorDialogState extends State<_AdvancedColorDialog> {
+  late HSVColor _hsv;
+  late final TextEditingController _hexCtrl;
+  bool _syncingHex = false;
+
+  Color get _color => _hsv.toColor();
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(widget.initialColor);
+    _hexCtrl = TextEditingController(text: _designHex(widget.initialColor));
+    _hexCtrl.addListener(_onHexChanged);
+  }
+
+  @override
+  void dispose() {
+    _hexCtrl.dispose();
+    super.dispose();
+  }
+
+  void _syncHex() {
+    _syncingHex = true;
+    _hexCtrl.text = _designHex(_color);
+    _hexCtrl.selection = TextSelection.collapsed(offset: _hexCtrl.text.length);
+    _syncingHex = false;
+  }
+
+  void _onHexChanged() {
+    if (_syncingHex) return;
+    final parsed = _parseDesignHex(_hexCtrl.text);
+    if (parsed == null) return;
+    setState(() => _hsv = HSVColor.fromColor(parsed));
+  }
+
+  void _setSv(Offset localPosition, Size size) {
+    final saturation = (localPosition.dx / size.width).clamp(0.0, 1.0);
+    final value = (1 - (localPosition.dy / size.height)).clamp(0.0, 1.0);
+    setState(() {
+      _hsv = _hsv.withSaturation(saturation).withValue(value);
+      _syncHex();
+    });
+  }
+
+  void _setHue(Offset localPosition, double width) {
+    final hue = ((localPosition.dx / width).clamp(0.0, 1.0)) * 360;
+    setState(() {
+      _hsv = _hsv.withHue(hue);
+      _syncHex();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hueColor = HSVColor.fromAHSV(1, _hsv.hue, 1, 1).toColor();
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 460),
+      child: Container(
+        decoration: BoxDecoration(
+          color: context.bgCard,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: context.borderStrongSoft),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 30,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = constraints.maxWidth.clamp(260.0, 340.0);
+                    return Center(
+                      child: GestureDetector(
+                        onPanDown: (details) =>
+                            _setSv(details.localPosition, Size(size, size)),
+                        onPanUpdate: (details) =>
+                            _setSv(details.localPosition, Size(size, size)),
+                        child: Container(
+                          width: size,
+                          height: size,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: context.borderStrongSoft),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: ColoredBox(color: hueColor),
+                              ),
+                              Positioned.fill(
+                                child: DecoratedBox(
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Colors.white,
+                                        Colors.transparent,
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned.fill(
+                                child: DecoratedBox(
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black,
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                left:
+                                    (_hsv.saturation * size).clamp(0.0, size) -
+                                    14,
+                                top:
+                                    ((1 - _hsv.value) * size).clamp(0.0, size) -
+                                    14,
+                                child: Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: _color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 3.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        blurRadius: 10,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    return GestureDetector(
+                      onPanDown: (details) =>
+                          _setHue(details.localPosition, width),
+                      onPanUpdate: (details) =>
+                          _setHue(details.localPosition, width),
+                      child: SizedBox(
+                        height: 30,
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Container(
+                              height: 16,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFFFF0000),
+                                    Color(0xFFFFFF00),
+                                    Color(0xFF00FF00),
+                                    Color(0xFF00FFFF),
+                                    Color(0xFF0000FF),
+                                    Color(0xFFFF00FF),
+                                    Color(0xFFFF0000),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left:
+                                  ((_hsv.hue / 360) * width).clamp(0.0, width) -
+                                  14,
+                              child: Container(
+                                width: 26,
+                                height: 26,
+                                decoration: BoxDecoration(
+                                  color: hueColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 3.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.18,
+                                      ),
+                                      blurRadius: 12,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _hexCtrl,
+                        textCapitalization: TextCapitalization.characters,
+                        style: GoogleFonts.outfit(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: context.bgCard,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 16,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: context.borderStrongSoft,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(
+                              color: context.borderStrongSoft,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: AppColors.primary,
+                              width: 1.6,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: _color,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: context.borderStrongSoft),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    tooltip: 'Copiar color',
+                    onPressed: () {
+                      Clipboard.setData(
+                        ClipboardData(text: _designHex(_color)),
+                      );
+                      TapLoopToast.show(
+                        context,
+                        'Color copiado.',
+                        TapLoopToastType.success,
+                      );
+                    },
+                    icon: const Icon(Icons.copy_rounded, size: 22),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text(
+                        'Cancelar',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    SizedBox(
+                      width: 180,
+                      child: TapLoopButton(
+                        label: 'Aplicar',
+                        height: 52,
+                        borderRadius: 999,
+                        icon: const Icon(Icons.check_rounded, size: 20),
+                        onPressed: () => Navigator.pop(context, _color),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Color? _parseDesignHex(String input) {
+  final clean = input.replaceAll('#', '').trim();
+  if (clean.length != 6) return null;
+  final value = int.tryParse('FF$clean', radix: 16);
+  return value == null ? null : Color(value);
+}
+
+class _DesignChoiceChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DesignChoiceChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: TapLoopMotion.fast,
+              curve: TapLoopMotion.standard,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppColors.primary.withValues(alpha: 0.08)
+                    : hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected
+                      ? AppColors.primary
+                      : context.borderStrongSoft,
+                  width: selected ? 1.5 : 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (selected) ...[
+                    const Icon(
+                      Icons.check_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    label,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: selected ? AppColors.primary : context.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _BgStyleChip extends StatelessWidget {
   final CardBgStyle style;
   final bool selected;
@@ -2448,149 +4151,180 @@ class _BgStyleChip extends StatelessWidget {
       CardBgStyle.mesh => 'Malla',
       CardBgStyle.stripes => 'Rayas',
     };
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? context.textPrimary : context.bgCard,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? context.textPrimary : context.borderColor,
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: selected
+                    ? context.textPrimary
+                    : hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected
+                      ? context.textPrimary
+                      : hovering
+                      ? context.borderStrongSoft.withValues(alpha: 0.9)
+                      : context.borderStrongSoft,
+                ),
+              ),
+              child: Text(
+                label,
+                style: GoogleFonts.dmSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: selected
+                      ? (context.isDark ? Colors.black : Colors.white)
+                      : context.textSecondary,
+                ),
+              ),
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.dmSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: selected
-                ? (context.isDark ? Colors.black : Colors.white)
-                : context.textSecondary,
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-class _TextColorButton extends StatelessWidget {
-  final String label;
-  final bool isDark;
+class _ProfileDesignChip extends StatelessWidget {
+  final CardProfileDesign design;
   final bool selected;
   final VoidCallback onTap;
-  const _TextColorButton({
-    required this.label,
-    required this.isDark,
+  const _ProfileDesignChip({
+    required this.design,
     required this.selected,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? context.textPrimary : context.bgCard,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: selected ? context.textPrimary : context.borderColor,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.dmSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: selected
-                ? (context.isDark ? Colors.black : Colors.white)
-                : context.textSecondary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LayoutChip extends StatelessWidget {
-  final CardLayoutStyle layout;
-  final bool selected;
-  final VoidCallback onTap;
-  const _LayoutChip({
-    required this.layout,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final icon = switch (layout) {
-      CardLayoutStyle.centered => Icons.person_outline,
-      CardLayoutStyle.leftAligned => Icons.format_align_left,
-      CardLayoutStyle.banner => Icons.view_headline,
+    final icon = switch (design) {
+      CardProfileDesign.classic => Icons.person_outline,
+      CardProfileDesign.modern => Icons.dashboard_customize_outlined,
     };
-    final label = switch (layout) {
-      CardLayoutStyle.centered => 'Clásico',
-      CardLayoutStyle.leftAligned => 'Izquierda',
-      CardLayoutStyle.banner => 'Banner',
+    final label = switch (design) {
+      CardProfileDesign.classic => 'Clásico',
+      CardProfileDesign.modern => 'Moderno',
     };
-    final desc = switch (layout) {
-      CardLayoutStyle.centered => 'Avatar arriba centrado',
-      CardLayoutStyle.leftAligned => 'Contenido a la izquierda',
-      CardLayoutStyle.banner => 'Avatar y nombre en fila',
+    final desc = switch (design) {
+      CardProfileDesign.classic => 'Logo, foto y datos centrados',
+      CardProfileDesign.modern => 'Acciones y enlaces más destacados',
     };
     final fgPrimary = selected ? AppColors.primary : context.textPrimary;
     final fgSub = context.textSecondary;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 188,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: context.bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : context.borderColor,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.max,
-          children: [
-            Icon(icon, size: 18, color: fgPrimary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 220,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: selected || hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected
+                      ? AppColors.primary
+                      : hovering
+                      ? context.borderStrongSoft.withValues(alpha: 0.9)
+                      : context.borderStrongSoft,
+                  width: selected ? 1.6 : 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.max,
                 children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: fgPrimary,
+                  Icon(icon, size: 20, color: fgPrimary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: fgPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          desc,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.dmSans(fontSize: 12, color: fgSub),
+                        ),
+                      ],
                     ),
-                  ),
-                  Text(
-                    desc,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.dmSans(fontSize: 10, color: fgSub),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _EditorInlineMetric extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _EditorInlineMetric({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppColors.primary, size: 24),
+        const SizedBox(height: 12),
+        Text(
+          value,
+          style: GoogleFonts.outfit(
+            fontSize: 30,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+          ),
         ),
-      ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: context.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2607,23 +4341,54 @@ class _ColorDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(10),
-          border: selected
-              ? Border.all(color: context.textPrimary, width: 3)
-              : null,
-        ),
-        child: selected
-            ? const Icon(Icons.check, color: Colors.white, size: 18)
-            : null,
-      ),
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 36,
+              height: 36,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: selected
+                    ? Colors.transparent
+                    : hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected
+                      ? AppColors.primary
+                      : context.borderStrongSoft,
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.borderSoft),
+                ),
+                child: selected
+                    ? Icon(
+                        Icons.check,
+                        color: _isDarkDesignColor(color)
+                            ? Colors.white
+                            : AppColors.primary,
+                        size: 13,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -2891,18 +4656,18 @@ class _SaveButton extends StatelessWidget {
       onTap: unsaved && !saving ? () => onSave() : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
         decoration: BoxDecoration(
           color: saving
               ? AppColors.success.withValues(alpha: 0.1)
               : unsaved
-              ? context.textPrimary
+              ? AppColors.primary
               : context.bgSubtle,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: unsaved && !saving
-                ? context.textPrimary
-                : context.borderColor,
+                ? AppColors.primary
+                : context.borderStrongSoft,
           ),
         ),
         child: saving
@@ -2929,10 +4694,10 @@ class _SaveButton extends StatelessWidget {
                 ],
               )
             : Text(
-                unsaved ? 'Guardar' : '✓ Guardado',
+                unsaved ? 'Guardar cambios' : 'Guardado',
                 style: GoogleFonts.dmSans(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w800,
                   color: unsaved
                       ? (context.isDark ? Colors.black : Colors.white)
                       : context.textMuted,
@@ -2948,10 +4713,12 @@ class _SaveButton extends StatelessWidget {
 class _AddContactSheet extends StatefulWidget {
   final ValueChanged<ContactItemModel> onSubmit;
   final ContactItemModel? initialItem;
+  final ContactType initialType;
   final bool isDialog;
   const _AddContactSheet({
     required this.onSubmit,
     this.initialItem,
+    this.initialType = ContactType.phone,
     this.isDialog = false,
   });
 
@@ -2963,6 +4730,7 @@ class _AddContactSheetState extends State<_AddContactSheet> {
   ContactType _type = ContactType.phone;
   final _valueCtrl = TextEditingController();
   final _labelCtrl = TextEditingController();
+  bool _isVisible = true;
   String _valueError = '';
   String _labelError = '';
 
@@ -2976,6 +4744,9 @@ class _AddContactSheetState extends State<_AddContactSheet> {
       _type = initial.type;
       _valueCtrl.text = initial.value;
       _labelCtrl.text = initial.label ?? '';
+      _isVisible = initial.isVisible;
+    } else {
+      _type = widget.initialType;
     }
     _valueCtrl.addListener(() => setState(() {}));
     _labelCtrl.addListener(() => setState(() {}));
@@ -3055,173 +4826,331 @@ class _AddContactSheetState extends State<_AddContactSheet> {
     ContactType.website: 'Sitio web',
   };
 
-  static const _icons = {
-    ContactType.phone: Icons.phone_outlined,
-    ContactType.whatsapp: Icons.chat_outlined,
-    ContactType.email: Icons.email_outlined,
-    ContactType.address: Icons.location_on_outlined,
-    ContactType.website: Icons.language_outlined,
-  };
-
   @override
   Widget build(BuildContext context) {
     final bottomPad = widget.isDialog
         ? 28.0
         : MediaQuery.of(context).viewInsets.bottom + 28;
-    return Container(
-      decoration: BoxDecoration(
-        color: context.bgCard,
-        borderRadius: widget.isDialog
-            ? BorderRadius.circular(20)
-            : const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(24, 20, 24, bottomPad),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!widget.isDialog)
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: context.borderColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          Row(
-            children: [
-              Text(
-                _isEditing ? 'Editar contacto' : 'Añadir contacto',
-                style: GoogleFonts.outfit(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: context.textPrimary,
-                ),
-              ),
-              if (widget.isDialog) ...[
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, size: 20),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 20),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 2.1,
-            children: ContactType.values.map((t) {
-              final active = _type == t;
-              return GestureDetector(
-                onTap: () => setState(() => _type = t),
+
+    final contactCards = GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: widget.isDialog ? 2 : 2,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: widget.isDialog ? 1.85 : 1.75,
+      children: ContactType.values.map((type) {
+        final active = _type == type;
+        var hoveringCard = false;
+        return StatefulBuilder(
+          builder: (context, setHover) {
+            return MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setHover(() => hoveringCard = true),
+              onExit: (_) => setHover(() => hoveringCard = false),
+              child: GestureDetector(
+                onTap: () => setState(() => _type = type),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: BoxDecoration(
                     color: active
                         ? AppColors.primary
-                        : (context.isDark
-                              ? const Color(0xFF171717)
-                              : Colors.white),
-                    borderRadius: BorderRadius.circular(10),
+                        : hoveringCard
+                        ? TapLoopMotion.hoverSurfaceColor(context)
+                        : context.bgCard,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: active ? AppColors.primary : context.borderColor,
+                      color: active
+                          ? AppColors.primary
+                          : hoveringCard
+                          ? context.borderStrongSoft
+                          : context.borderStrongSoft,
+                      width: active ? 1.5 : 1,
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Stack(
                     children: [
-                      Icon(
-                        _icons[t]!,
-                        size: 16,
-                        color: active ? Colors.white : context.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _labels[t]!,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: active ? Colors.white : context.textSecondary,
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _contactTypeIcon(
+                              type,
+                              size: 24,
+                              color: active
+                                  ? Colors.white
+                                  : _contactTypeColor(type),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              _labels[type]!,
+                              style: GoogleFonts.outfit(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: active
+                                    ? Colors.white
+                                    : context.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (active)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Icon(
+                            Icons.check_circle_rounded,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      }).toList(),
+    );
+
+    final fields = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _EditInputField(
+          label: 'Etiqueta visible (opcional)',
+          controller: _labelCtrl,
+          hint: 'Ej: Oficina',
+          error: _labelError,
+          maxLength: FieldValidators.contactSecondaryMaxLength,
+        ),
+        const SizedBox(height: 16),
+        _EditInputField(
+          label: _labels[_type]!,
+          controller: _valueCtrl,
+          hint: _hints[_type],
+          error: _valueError,
+          maxLength: FieldValidators.contactPrimaryMaxLength,
+        ),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: context.bgCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: context.borderStrongSoft),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.visibility_outlined,
+                color: AppColors.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Visible en el perfil público',
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Las personas podrán usar este medio desde tu tarjeta.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _EditorVisibilitySwitch(
+                value: _isVisible,
+                onChanged: (value) => setState(() => _isVisible = value),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      constraints: widget.isDialog
+          ? const BoxConstraints(maxHeight: 760)
+          : const BoxConstraints(),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: widget.isDialog
+            ? BorderRadius.circular(30)
+            : const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(30, 26, 30, bottomPad),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!widget.isDialog)
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: context.borderStrongSoft,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _isEditing ? 'Editar contacto' : 'Añadir contacto',
+                        style: GoogleFonts.outfit(
+                          fontSize: widget.isDialog ? 30 : 22,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Elige el medio y completa el dato que aparecerá en tu perfil.',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 15,
+                          color: context.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-          _EditInputField(
-            label: _labels[_type]!,
-            controller: _valueCtrl,
-            hint: _hints[_type],
-            error: _valueError,
-            maxLength: FieldValidators.contactPrimaryMaxLength,
-          ),
-          const SizedBox(height: 14),
-          _EditInputField(
-            label: 'Etiqueta (opcional)',
-            controller: _labelCtrl,
-            hint: 'Ej: Oficina',
-            error: _labelError,
-            maxLength: FieldValidators.contactSecondaryMaxLength,
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: TapLoopButton(
-              label: _isEditing ? 'Guardar cambios' : 'Añadir',
-              onPressed: () {
-                if (!_validateFields()) {
-                  TapLoopToast.show(
-                    context,
-                    'Por favor, verifica los campos marcados.',
-                    TapLoopToastType.error,
-                  );
-                  return;
-                }
-
-                if (_valueCtrl.text.trim().isEmpty) {
-                  TapLoopToast.show(
-                    context,
-                    '${_labels[_type]} es requerido.',
-                    TapLoopToastType.error,
-                  );
-                  return;
-                }
-
-                final initial = widget.initialItem;
-                widget.onSubmit(
-                  ContactItemModel(
-                    id:
-                        initial?.id ??
-                        DateTime.now().millisecondsSinceEpoch.toString(),
-                    type: _type,
-                    value: _valueCtrl.text.trim(),
-                    label: _labelCtrl.text.trim().isEmpty
-                        ? null
-                        : _labelCtrl.text.trim(),
-                    isVisible: initial?.isVisible ?? true,
-                    sortOrder: initial?.sortOrder ?? 0,
+                if (widget.isDialog)
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded, size: 28),
                   ),
-                );
-                if (!widget.isDialog) Navigator.pop(context);
-                if (widget.isDialog && context.mounted) Navigator.pop(context);
-              },
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 28),
+            if (widget.isDialog)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 392,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _EditorDialogLabel('Medio de contacto'),
+                        const SizedBox(height: 12),
+                        contactCards,
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 282,
+                    margin: const EdgeInsets.symmetric(horizontal: 26),
+                    color: context.borderStrongSoft,
+                  ),
+                  Expanded(child: fields),
+                ],
+              )
+            else ...[
+              _EditorDialogLabel('Medio de contacto'),
+              const SizedBox(height: 12),
+              contactCards,
+              const SizedBox(height: 20),
+              fields,
+            ],
+            const SizedBox(height: 28),
+            Divider(color: context.borderStrongSoft, height: 1),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancelar',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                SizedBox(
+                  width: 220,
+                  child: TapLoopButton(
+                    label: _isEditing ? 'Guardar cambios' : 'Añadir',
+                    height: 54,
+                    borderRadius: 999,
+                    icon: Icon(
+                      _isEditing ? Icons.save_outlined : Icons.add_rounded,
+                      size: 18,
+                    ),
+                    onPressed: () {
+                      if (!_validateFields()) {
+                        TapLoopToast.show(
+                          context,
+                          'Por favor, verifica los campos marcados.',
+                          TapLoopToastType.error,
+                        );
+                        return;
+                      }
+
+                      if (_valueCtrl.text.trim().isEmpty) {
+                        TapLoopToast.show(
+                          context,
+                          '${_labels[_type]} es requerido.',
+                          TapLoopToastType.error,
+                        );
+                        return;
+                      }
+
+                      final initial = widget.initialItem;
+                      widget.onSubmit(
+                        ContactItemModel(
+                          id:
+                              initial?.id ??
+                              DateTime.now().millisecondsSinceEpoch.toString(),
+                          type: _type,
+                          value: _valueCtrl.text.trim(),
+                          label: _labelCtrl.text.trim().isEmpty
+                              ? null
+                              : _labelCtrl.text.trim(),
+                          isVisible: _isVisible,
+                          sortOrder: initial?.sortOrder ?? 0,
+                        ),
+                      );
+                      if (!widget.isDialog) Navigator.pop(context);
+                      if (widget.isDialog && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3247,6 +5176,7 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
   SocialPlatform _platform = SocialPlatform.linkedin;
   final _urlCtrl = TextEditingController();
   final _labelCtrl = TextEditingController();
+  bool _isVisible = true;
   String _urlError = '';
   String _labelError = '';
 
@@ -3260,6 +5190,7 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
       _platform = initial.platform;
       _urlCtrl.text = initial.url;
       _labelCtrl.text = initial.customLabel ?? '';
+      _isVisible = initial.isVisible;
     }
     _urlCtrl.addListener(() => setState(() {}));
     _labelCtrl.addListener(() => setState(() {}));
@@ -3323,179 +5254,326 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
     SocialPlatform.custom: 'https://tuenlace.com',
   };
 
-  static const _platformIcons = {
-    SocialPlatform.linkedin: Icons.work_outline,
-    SocialPlatform.instagram: Icons.photo_camera_outlined,
-    SocialPlatform.facebook: Icons.people_outlined,
-    SocialPlatform.tiktok: Icons.music_note_outlined,
-    SocialPlatform.twitter: Icons.tag,
-    SocialPlatform.youtube: Icons.play_circle_outline,
-    SocialPlatform.calendly: Icons.calendar_today_outlined,
-    SocialPlatform.github: Icons.code_outlined,
-    SocialPlatform.custom: Icons.link_outlined,
-  };
-
   @override
   Widget build(BuildContext context) {
     final bottomPad = widget.isDialog
         ? 28.0
         : MediaQuery.of(context).viewInsets.bottom + 28;
-    return Container(
-      decoration: BoxDecoration(
-        color: context.bgCard,
-        borderRadius: widget.isDialog
-            ? BorderRadius.circular(20)
-            : const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(24, 20, 24, bottomPad),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!widget.isDialog)
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: context.borderColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          Row(
-            children: [
-              Text(
-                _isEditing ? 'Editar red social' : 'Añadir red social',
-                style: GoogleFonts.outfit(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: context.textPrimary,
-                ),
-              ),
-              if (widget.isDialog) ...[
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, size: 20),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 20),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 2.1,
-            children: SocialPlatform.values.map((p) {
-              final active = _platform == p;
-              final shortLabel = _platformLabels[p]!.split(' ').first;
-              return GestureDetector(
+    final platformCards = GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: widget.isDialog ? 3 : 2,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: widget.isDialog ? 1.08 : 1.65,
+      children: SocialPlatform.values.map((p) {
+        final active = _platform == p;
+        final label = _platformLabels[p]!;
+        final platformColor = _socialPlatformColor(p);
+        var hoveringCard = false;
+        return StatefulBuilder(
+          builder: (context, setHover) {
+            return MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setHover(() => hoveringCard = true),
+              onExit: (_) => setHover(() => hoveringCard = false),
+              child: GestureDetector(
                 onTap: () => setState(() => _platform = p),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: active
-                        ? AppColors.primary
-                        : (context.isDark
-                              ? const Color(0xFF171717)
-                              : Colors.white),
-                    borderRadius: BorderRadius.circular(10),
+                        ? platformColor.withValues(alpha: 0.08)
+                        : hoveringCard
+                        ? TapLoopMotion.hoverSurfaceColor(context)
+                        : context.bgCard,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: active ? AppColors.primary : context.borderColor,
+                      color: active
+                          ? platformColor
+                          : hoveringCard
+                          ? context.borderStrongSoft
+                          : context.borderStrongSoft,
+                      width: active ? 1.6 : 1,
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Stack(
                     children: [
-                      Icon(
-                        _platformIcons[p]!,
-                        size: 16,
-                        color: active ? Colors.white : context.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        shortLabel,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: active ? Colors.white : context.textSecondary,
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _socialPlatformIcon(
+                              p,
+                              size: widget.isDialog ? 24 : 18,
+                              color: platformColor,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              label,
+                              style: GoogleFonts.dmSans(
+                                fontSize: widget.isDialog ? 13 : 12,
+                                fontWeight: FontWeight.w800,
+                                color: active
+                                    ? context.textPrimary
+                                    : context.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (active)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Icon(
+                            Icons.check_circle_rounded,
+                            size: 18,
+                            color: platformColor,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      }).toList(),
+    );
+
+    final fields = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _EditInputField(
+          label: 'Etiqueta visible',
+          controller: _labelCtrl,
+          hint: 'Ej: WhatsApp',
+          error: _labelError,
+          maxLength: FieldValidators.socialLabelMaxLength,
+        ),
+        const SizedBox(height: 16),
+        _EditInputField(
+          label: _platformLabels[_platform]!,
+          controller: _urlCtrl,
+          hint: _platformHints[_platform],
+          keyboardType: TextInputType.url,
+          error: _urlError,
+          maxLength: FieldValidators.socialUrlMaxLength,
+        ),
+        const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: context.bgCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: context.borderStrongSoft),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.visibility_outlined,
+                color: AppColors.primary,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Visible en el perfil público',
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Las personas podrán abrir este enlace desde tu tarjeta.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _EditorVisibilitySwitch(
+                value: _isVisible,
+                onChanged: (value) => setState(() => _isVisible = value),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      constraints: widget.isDialog
+          ? const BoxConstraints(maxHeight: 760)
+          : const BoxConstraints(),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: widget.isDialog
+            ? BorderRadius.circular(30)
+            : const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(30, 26, 30, bottomPad),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!widget.isDialog)
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: context.borderStrongSoft,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _isEditing ? 'Editar enlace' : 'Agregar enlace',
+                        style: GoogleFonts.outfit(
+                          fontSize: widget.isDialog ? 30 : 22,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Conecta tus canales para que otros puedan contactarte fácilmente.',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 15,
+                          color: context.textSecondary,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-          _EditInputField(
-            label: _platformLabels[_platform]!,
-            controller: _urlCtrl,
-            hint: _platformHints[_platform],
-            keyboardType: TextInputType.url,
-            error: _urlError,
-            maxLength: FieldValidators.socialUrlMaxLength,
-          ),
-          const SizedBox(height: 14),
-          _EditInputField(
-            label: 'Etiqueta (opcional)',
-            controller: _labelCtrl,
-            hint: 'Ej: Mi canal principal',
-            error: _labelError,
-            maxLength: FieldValidators.socialLabelMaxLength,
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: TapLoopButton(
-              label: _isEditing ? 'Guardar cambios' : 'Añadir',
-              onPressed: () {
-                if (!_validateFields()) {
-                  TapLoopToast.show(
-                    context,
-                    'Por favor, verifica los campos marcados.',
-                    TapLoopToastType.error,
-                  );
-                  return;
-                }
-
-                if (_urlCtrl.text.trim().isEmpty) {
-                  TapLoopToast.show(
-                    context,
-                    'La URL es requerida.',
-                    TapLoopToastType.error,
-                  );
-                  return;
-                }
-
-                final initial = widget.initialLink;
-                widget.onSubmit(
-                  SocialLinkModel(
-                    id:
-                        initial?.id ??
-                        DateTime.now().millisecondsSinceEpoch.toString(),
-                    platform: _platform,
-                    url: _urlCtrl.text.trim(),
-                    customLabel: _labelCtrl.text.trim().isEmpty
-                        ? null
-                        : _labelCtrl.text.trim(),
-                    isVisible: initial?.isVisible ?? true,
-                    sortOrder: initial?.sortOrder ?? 0,
+                if (widget.isDialog)
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded, size: 28),
                   ),
-                );
-                if (!widget.isDialog) Navigator.pop(context);
-                if (widget.isDialog && context.mounted) Navigator.pop(context);
-              },
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 28),
+            if (widget.isDialog)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _EditorDialogLabel('Tipo de enlace'),
+                        const SizedBox(height: 12),
+                        platformCards,
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 360,
+                    margin: const EdgeInsets.symmetric(horizontal: 26),
+                    color: context.borderStrongSoft,
+                  ),
+                  Expanded(child: fields),
+                ],
+              )
+            else ...[
+              _EditorDialogLabel('Tipo de enlace'),
+              const SizedBox(height: 12),
+              platformCards,
+              const SizedBox(height: 20),
+              fields,
+            ],
+            const SizedBox(height: 28),
+            Divider(color: context.borderStrongSoft, height: 1),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancelar',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                SizedBox(
+                  width: 220,
+                  child: TapLoopButton(
+                    label: _isEditing ? 'Guardar cambios' : 'Agregar enlace',
+                    height: 54,
+                    borderRadius: 999,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    onPressed: () {
+                      if (!_validateFields()) {
+                        TapLoopToast.show(
+                          context,
+                          'Por favor, verifica los campos marcados.',
+                          TapLoopToastType.error,
+                        );
+                        return;
+                      }
+
+                      if (_urlCtrl.text.trim().isEmpty) {
+                        TapLoopToast.show(
+                          context,
+                          'La URL es requerida.',
+                          TapLoopToastType.error,
+                        );
+                        return;
+                      }
+
+                      final initial = widget.initialLink;
+                      widget.onSubmit(
+                        SocialLinkModel(
+                          id:
+                              initial?.id ??
+                              DateTime.now().millisecondsSinceEpoch.toString(),
+                          platform: _platform,
+                          url: _urlCtrl.text.trim(),
+                          customLabel: _labelCtrl.text.trim().isEmpty
+                              ? null
+                              : _labelCtrl.text.trim(),
+                          isVisible: _isVisible,
+                          sortOrder: initial?.sortOrder ?? 0,
+                        ),
+                      );
+                      if (!widget.isDialog) Navigator.pop(context);
+                      if (widget.isDialog && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3503,13 +5581,15 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
 
 // ─── Formularios Tab ─────────────────────────────────────────────────────────
 
-extension _SmartFormFieldTypeUi on SmartFormFieldType {
-  String get label => switch (this) {
-    SmartFormFieldType.text => 'Texto',
-    SmartFormFieldType.email => 'Email',
-    SmartFormFieldType.phone => 'Teléfono',
-    SmartFormFieldType.textarea => 'Área de texto',
-    SmartFormFieldType.number => 'Numérico',
+IconData _smartFormIncludedFieldIcon(SmartFormIncludedField field) {
+  return switch (field) {
+    SmartFormIncludedField.name => Icons.person_outline_rounded,
+    SmartFormIncludedField.email => Icons.email_outlined,
+    SmartFormIncludedField.phone => Icons.phone_outlined,
+    SmartFormIncludedField.company => Icons.business_outlined,
+    SmartFormIncludedField.message => Icons.chat_bubble_outline_rounded,
+    SmartFormIncludedField.budget => Icons.payments_outlined,
+    SmartFormIncludedField.date => Icons.calendar_month_outlined,
   };
 }
 
@@ -3568,70 +5648,387 @@ class _FormulariosTabState extends State<_FormulariosTab> {
       return;
     }
     final nameCtrl = TextEditingController();
-    final created = await showDialog<String>(
+    final descriptionCtrl = TextEditingController();
+    final successCtrl = TextEditingController(
+      text: 'Gracias, recibimos tu información.',
+    );
+    var activeForm = true;
+    final selectedFields = <SmartFormIncludedField>{
+      SmartFormIncludedField.name,
+      SmartFormIncludedField.email,
+      SmartFormIncludedField.phone,
+      SmartFormIncludedField.message,
+    };
+    final created = await showDialog<SmartFormModel>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          backgroundColor: ctx.bgCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          constraints: const BoxConstraints(maxWidth: 400),
-          title: Text(
-            'Nuevo formulario',
-            style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
-          ),
-          content: SizedBox(
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  maxLength: 100,
-                  maxLines: 1,
-                  onChanged: (value) => setDialog(() {}),
-                  decoration: _corporateInputDecoration(
-                    ctx,
-                    'Nombre del formulario',
-                  ).copyWith(counterText: ''),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${nameCtrl.text.length}/100',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: nameCtrl.text.length > 80
-                            ? Colors.red
-                            : ctx.textSecondary,
+        builder: (ctx, setDialog) {
+          final includedFields = smartFormIncludedFieldOrder
+              .where(selectedFields.contains)
+              .toList();
+          final canCreate =
+              nameCtrl.text.trim().isNotEmpty && includedFields.isNotEmpty;
+          void applyPreset({
+            required String name,
+            required String description,
+            required String successMessage,
+            required List<SmartFormIncludedField> fields,
+          }) {
+            setDialog(() {
+              nameCtrl.text = name;
+              descriptionCtrl.text = description;
+              successCtrl.text = successMessage;
+              selectedFields
+                ..clear()
+                ..addAll(fields);
+            });
+          }
+
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 32,
+              vertical: 28,
+            ),
+            backgroundColor: ctx.bgCard,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 760,
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.88,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Crear formulario',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w800,
+                                    color: ctx.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Crea un formulario para captar contactos, cotizaciones o solicitudes.',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 14,
+                                    color: ctx.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: const Icon(Icons.close_rounded, size: 28),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 22),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _EditorDialogLabel('Nombre del formulario'),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: nameCtrl,
+                                  maxLength: 100,
+                                  maxLines: 1,
+                                  onChanged: (_) => setDialog(() {}),
+                                  decoration: _corporateInputDecoration(
+                                    ctx,
+                                    'Ej. Contacto, cotización o demo',
+                                  ).copyWith(counterText: ''),
+                                ),
+                                const SizedBox(height: 6),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    '${nameCtrl.text.length}/100',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: nameCtrl.text.length > 80
+                                          ? Colors.red
+                                          : ctx.textMuted,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _EditorDialogLabel('Descripción'),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: descriptionCtrl,
+                                  maxLines: 3,
+                                  decoration: _corporateInputDecoration(
+                                    ctx,
+                                    'Describe el propósito de este formulario',
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                _EditorDialogLabel('Mensaje de éxito'),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: successCtrl,
+                                  decoration: _corporateInputDecoration(
+                                    ctx,
+                                    'Gracias, recibimos tu información.',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 22),
+                          Expanded(
+                            flex: 2,
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: ctx.bgCard,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: ctx.borderStrongSoft),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const _EditorDialogLabel('Usos sugeridos'),
+                                  const SizedBox(height: 12),
+                                  _SuggestedUsePill(
+                                    icon: Icons.person_outline_rounded,
+                                    label: 'Contacto',
+                                    onTap: () => applyPreset(
+                                      name: 'Contacto',
+                                      description:
+                                          'Formulario para recibir datos de contacto.',
+                                      successMessage:
+                                          'Gracias, recibimos tu información.',
+                                      fields: const [
+                                        SmartFormIncludedField.name,
+                                        SmartFormIncludedField.email,
+                                        SmartFormIncludedField.phone,
+                                        SmartFormIncludedField.message,
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _SuggestedUsePill(
+                                    icon: Icons.receipt_long_outlined,
+                                    label: 'Cotización',
+                                    onTap: () => applyPreset(
+                                      name: 'Cotización',
+                                      description:
+                                          'Formulario para solicitar una cotización.',
+                                      successMessage:
+                                          'Gracias, recibimos tu solicitud de cotización.',
+                                      fields: const [
+                                        SmartFormIncludedField.name,
+                                        SmartFormIncludedField.email,
+                                        SmartFormIncludedField.phone,
+                                        SmartFormIncludedField.company,
+                                        SmartFormIncludedField.message,
+                                        SmartFormIncludedField.budget,
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _SuggestedUsePill(
+                                    icon: Icons.calendar_month_outlined,
+                                    label: 'Agendar demo',
+                                    onTap: () => applyPreset(
+                                      name: 'Agendar demo',
+                                      description:
+                                          'Formulario para coordinar una demostración.',
+                                      successMessage:
+                                          'Gracias, recibimos tu solicitud de demo.',
+                                      fields: const [
+                                        SmartFormIncludedField.name,
+                                        SmartFormIncludedField.email,
+                                        SmartFormIncludedField.phone,
+                                        SmartFormIncludedField.company,
+                                        SmartFormIncludedField.message,
+                                        SmartFormIncludedField.date,
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: ctx.bgCard,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: ctx.borderStrongSoft),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _EditorDialogLabel('Campos incluidos'),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Selecciona la información que solicitará el formulario.',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                color: ctx.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: smartFormIncludedFieldOrder.map((
+                                field,
+                              ) {
+                                final selected = selectedFields.contains(field);
+                                return _FieldChip(
+                                  icon: _smartFormIncludedFieldIcon(field),
+                                  label: field.label,
+                                  selected: selected,
+                                  onTap: () => setDialog(() {
+                                    if (selected) {
+                                      selectedFields.remove(field);
+                                    } else {
+                                      selectedFields.add(field);
+                                    }
+                                  }),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ctx.bgCard,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: ctx.borderStrongSoft),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle_outline_rounded,
+                              color: AppColors.primary,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Formulario activo',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: ctx.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Permite recibir respuestas desde tu perfil público.',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 12,
+                                      color: ctx.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _EditorVisibilitySwitch(
+                              value: activeForm,
+                              onChanged: (value) =>
+                                  setDialog(() => activeForm = value),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 26),
+                      Divider(color: ctx.borderStrongSoft, height: 1),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: Text(
+                              'Cancelar',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          SizedBox(
+                            width: 190,
+                            child: TapLoopButton(
+                              label: 'Crear',
+                              height: 54,
+                              borderRadius: 999,
+                              icon: const Icon(Icons.add_rounded, size: 18),
+                              onPressed: canCreate
+                                  ? () => Navigator.pop(
+                                      ctx,
+                                      SmartFormModel(
+                                        id: '',
+                                        cardId: widget.cardId,
+                                        name: nameCtrl.text.trim(),
+                                        description: descriptionCtrl.text
+                                            .trim(),
+                                        successMessage:
+                                            successCtrl.text.trim().isEmpty
+                                            ? 'Gracias, recibimos tu información.'
+                                            : successCtrl.text.trim(),
+                                        isActive: activeForm,
+                                        includedFields: includedFields,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: nameCtrl.text.trim().isNotEmpty
-                  ? () => Navigator.pop(ctx, nameCtrl.text.trim())
-                  : null,
-              child: const Text('Crear'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
-    if (created == null || created.isEmpty) return;
+    nameCtrl.dispose();
+    descriptionCtrl.dispose();
+    successCtrl.dispose();
+    if (created == null) return;
     try {
       await CardRepository.createSmartForm(widget.cardId, created);
       await _loadForms();
@@ -3660,10 +6057,10 @@ class _FormulariosTabState extends State<_FormulariosTab> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3674,41 +6071,61 @@ class _FormulariosTabState extends State<_FormulariosTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Formularios dinámicos',
+                          'Formularios de captura',
                           style: GoogleFonts.outfit(
-                            fontSize: 22,
+                            fontSize: 28,
                             fontWeight: FontWeight.w800,
                             color: context.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Text(
-                          '${_forms.length} formularios en base de datos',
+                          'Crea y gestiona formularios para capturar prospectos desde tu perfil.',
                           style: GoogleFonts.dmSans(
-                            fontSize: 13,
+                            fontSize: 14,
                             color: context.textSecondary,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  TapLoopButton(
-                    label: 'Añadir',
-                    width: 170,
-                    height: 40,
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    onPressed: _createForm,
+                ],
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: _EditorInlineMetric(
+                      icon: Icons.dynamic_form_outlined,
+                      value: '${_forms.length}',
+                      label: 'Formularios',
+                    ),
+                  ),
+                  const SizedBox(width: 34),
+                  Expanded(
+                    child: _EditorInlineMetric(
+                      icon: Icons.check_circle_outline_rounded,
+                      value: '${_forms.where((form) => form.isActive).length}',
+                      label: 'Activos',
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              const SizedBox(height: 8),
-              const _FormsLeadNameNotice(compact: true),
-              const SizedBox(height: 18),
+              const SizedBox(height: 20),
+              TapLoopButton(
+                label: 'Crear formulario',
+                height: 54,
+                borderRadius: 999,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                onPressed: _createForm,
+              ),
+              const SizedBox(height: 28),
+              Divider(color: context.borderStrongSoft, height: 1),
+              const SizedBox(height: 24),
               if (_forms.isEmpty)
                 _EmptyState(
                   message: 'No hay formularios creados',
-                  hint: 'Crea uno para empezar a capturar leads dinámicamente.',
+                  hint: 'Crea uno seleccionando los campos incluidos.',
                 )
               else
                 ..._forms.map(
@@ -3717,6 +6134,25 @@ class _FormulariosTabState extends State<_FormulariosTab> {
                     child: _DbSmartFormCard(form: f, onChanged: _loadForms),
                   ),
                 ),
+              const SizedBox(height: 28),
+              Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 210,
+                  child: TapLoopButton(
+                    label: 'Guardar cambios',
+                    variant: TapLoopButtonVariant.outline,
+                    height: 54,
+                    borderRadius: 999,
+                    icon: const Icon(
+                      Icons.save_outlined,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    onPressed: _loadForms,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -3743,71 +6179,159 @@ class _DbSmartFormCardState extends State<_DbSmartFormCard> {
     widget.onChanged();
   }
 
-  Future<void> _renameForm() async {
+  Future<void> _editForm() async {
     final ctrl = TextEditingController(text: widget.form.name);
-    final name = await showDialog<String>(
+    final descriptionCtrl = TextEditingController(
+      text: widget.form.description ?? '',
+    );
+    final successCtrl = TextEditingController(text: widget.form.successMessage);
+    var activeForm = widget.form.isActive;
+    final selectedFields = widget.form.includedFields.toSet();
+    final updated = await showDialog<SmartFormModel>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          backgroundColor: ctx.bgCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          constraints: const BoxConstraints(maxWidth: 400),
-          title: const Text('Editar formulario'),
-          content: SizedBox(
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: ctrl,
-                  maxLength: 100,
-                  maxLines: 1,
-                  onChanged: (value) => setDialog(() {}),
-                  decoration: _corporateInputDecoration(
-                    ctx,
-                    'Nombre',
-                  ).copyWith(counterText: ''),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+        builder: (ctx, setDialog) {
+          final includedFields = smartFormIncludedFieldOrder
+              .where(selectedFields.contains)
+              .toList();
+          final canSave =
+              ctrl.text.trim().isNotEmpty && includedFields.isNotEmpty;
+          return AlertDialog(
+            backgroundColor: ctx.bgCard,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            constraints: const BoxConstraints(maxWidth: 720),
+            title: const Text('Editar formulario'),
+            content: SizedBox(
+              width: 640,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${ctrl.text.length}/100',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: ctrl.text.length > 80
-                            ? Colors.red
-                            : ctx.textSecondary,
+                    _EditorDialogLabel('Nombre del formulario'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: ctrl,
+                      maxLength: 100,
+                      maxLines: 1,
+                      onChanged: (value) => setDialog(() {}),
+                      decoration: _corporateInputDecoration(
+                        ctx,
+                        'Nombre',
+                      ).copyWith(counterText: ''),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '${ctrl.text.length}/100',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: ctrl.text.length > 80
+                              ? Colors.red
+                              : ctx.textSecondary,
+                        ),
                       ),
+                    ),
+                    const SizedBox(height: 12),
+                    _EditorDialogLabel('Descripción'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: descriptionCtrl,
+                      maxLines: 3,
+                      decoration: _corporateInputDecoration(
+                        ctx,
+                        'Describe el propósito de este formulario',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _EditorDialogLabel('Mensaje de éxito'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: successCtrl,
+                      decoration: _corporateInputDecoration(
+                        ctx,
+                        'Gracias, recibimos tu información.',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _EditorDialogLabel('Campos incluidos'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: smartFormIncludedFieldOrder.map((field) {
+                        final selected = selectedFields.contains(field);
+                        return _FieldChip(
+                          icon: _smartFormIncludedFieldIcon(field),
+                          label: field.label,
+                          selected: selected,
+                          onTap: () => setDialog(() {
+                            if (selected) {
+                              selectedFields.remove(field);
+                            } else {
+                              selectedFields.add(field);
+                            }
+                          }),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Formulario activo',
+                        style: GoogleFonts.outfit(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Permite recibir respuestas desde tu perfil público.',
+                      ),
+                      value: activeForm,
+                      onChanged: (value) => setDialog(() => activeForm = value),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: ctrl.text.trim().isNotEmpty
-                  ? () => Navigator.pop(ctx, ctrl.text.trim())
-                  : null,
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              TextButton(
+                onPressed: canSave
+                    ? () => Navigator.pop(
+                        ctx,
+                        widget.form.copyWith(
+                          name: ctrl.text.trim(),
+                          description: descriptionCtrl.text.trim(),
+                          successMessage: successCtrl.text.trim().isEmpty
+                              ? 'Gracias, recibimos tu información.'
+                              : successCtrl.text.trim(),
+                          isActive: activeForm,
+                          includedFields: includedFields,
+                        ),
+                      )
+                    : null,
+                child: const Text('Guardar'),
+              ),
+            ],
+          );
+        },
       ),
     );
-    if (name == null || name.isEmpty) return;
+    ctrl.dispose();
+    descriptionCtrl.dispose();
+    successCtrl.dispose();
+    if (updated == null) return;
     try {
-      await CardRepository.updateSmartForm(widget.form.copyWith(name: name));
+      await CardRepository.updateSmartForm(updated);
       widget.onChanged();
       if (mounted) {
         TapLoopToast.show(
@@ -3849,304 +6373,95 @@ class _DbSmartFormCardState extends State<_DbSmartFormCard> {
     }
   }
 
-  Future<void> _addField() async {
-    final labelCtrl = TextEditingController();
-    SmartFormFieldType type = SmartFormFieldType.text;
-    bool required = false;
-    String labelError = '';
-
-    final created = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          backgroundColor: ctx.bgCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          title: const Text('Nuevo campo'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: labelCtrl,
-                maxLength: 200,
-                onChanged: (value) {
-                  setDialog(() {
-                    final validation = FieldValidators.validateMaxLength(
-                      value,
-                      FieldValidators.dynamicFieldMaxLength,
-                      'Label',
-                    );
-                    labelError = validation.errorMessage ?? '';
-                  });
-                },
-                decoration: _corporateInputDecoration(
-                  ctx,
-                  'Label del campo',
-                  error: labelError,
-                ),
-              ),
-              if (labelError.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  labelError,
-                  style: GoogleFonts.dmSans(fontSize: 12, color: Colors.red),
-                ),
-              ],
-              const SizedBox(height: 10),
-              DropdownButtonFormField<SmartFormFieldType>(
-                initialValue: type,
-                items: SmartFormFieldType.values
-                    .map(
-                      (t) => DropdownMenuItem(value: t, child: Text(t.label)),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setDialog(() => type = v);
-                },
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Obligatorio'),
-                value: required,
-                onChanged: (v) => setDialog(() => required = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: labelError.isEmpty && labelCtrl.text.trim().isNotEmpty
-                  ? () => Navigator.pop(ctx, true)
-                  : null,
-              child: const Text('Agregar'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (created != true || labelCtrl.text.trim().isEmpty) return;
-
-    // Final validation before saving
-    final validation = FieldValidators.validateMaxLength(
-      labelCtrl.text,
-      FieldValidators.dynamicFieldMaxLength,
-      'Label',
-    );
-    if (!validation.isValid) {
-      TapLoopToast.show(
-        context,
-        validation.errorMessage ?? 'Error de validación',
-        TapLoopToastType.error,
-      );
-      return;
-    }
-
-    await CardRepository.addSmartFormField(
-      widget.form.id,
-      SmartFormFieldModel(
-        id: '',
-        formId: widget.form.id,
-        fieldType: type,
-        label: labelCtrl.text.trim(),
-        isRequired: required,
-      ),
-    );
-    widget.onChanged();
-  }
-
-  Future<void> _editField(SmartFormFieldModel field) async {
-    final labelCtrl = TextEditingController(text: field.label);
-    SmartFormFieldType type = field.fieldType;
-    bool required = field.isRequired;
-    String labelError = '';
-
-    final updated = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          backgroundColor: ctx.bgCard,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          title: const Text('Editar campo'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: labelCtrl,
-                maxLength: 200,
-                onChanged: (value) {
-                  setDialog(() {
-                    final validation = FieldValidators.validateMaxLength(
-                      value,
-                      FieldValidators.dynamicFieldMaxLength,
-                      'Label',
-                    );
-                    labelError = validation.errorMessage ?? '';
-                  });
-                },
-                decoration: _corporateInputDecoration(
-                  ctx,
-                  'Label del campo',
-                  error: labelError,
-                ),
-              ),
-              if (labelError.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  labelError,
-                  style: GoogleFonts.dmSans(fontSize: 12, color: Colors.red),
-                ),
-              ],
-              const SizedBox(height: 10),
-              DropdownButtonFormField<SmartFormFieldType>(
-                initialValue: type,
-                items: SmartFormFieldType.values
-                    .map(
-                      (t) => DropdownMenuItem(value: t, child: Text(t.label)),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setDialog(() => type = v);
-                },
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Obligatorio'),
-                value: required,
-                onChanged: (v) => setDialog(() => required = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: labelError.isEmpty && labelCtrl.text.trim().isNotEmpty
-                  ? () => Navigator.pop(ctx, true)
-                  : null,
-              child: const Text('Guardar'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (updated != true || labelCtrl.text.trim().isEmpty) return;
-
-    // Final validation before saving
-    final validation = FieldValidators.validateMaxLength(
-      labelCtrl.text,
-      FieldValidators.dynamicFieldMaxLength,
-      'Label',
-    );
-    if (!validation.isValid) {
-      TapLoopToast.show(
-        context,
-        validation.errorMessage ?? 'Error de validación',
-        TapLoopToastType.error,
-      );
-      return;
-    }
-
-    await CardRepository.updateSmartFormField(
-      field.copyWith(
-        label: labelCtrl.text.trim(),
-        fieldType: type,
-        isRequired: required,
-      ),
-    );
-    widget.onChanged();
-  }
-
-  Future<void> _deleteField(String fieldId) async {
-    await CardRepository.deleteSmartFormField(fieldId);
-    widget.onChanged();
-  }
-
-  Future<void> _reorderFields(int oldIndex, int newIndex) async {
-    final items = [...widget.form.fields];
-    if (newIndex > oldIndex) newIndex -= 1;
-    final moved = items.removeAt(oldIndex);
-    items.insert(newIndex, moved);
-    final normalized = items
-        .asMap()
-        .entries
-        .map((e) => e.value.copyWith(sortOrder: e.key))
-        .toList();
-    await CardRepository.reorderSmartFormFields(normalized);
-    widget.onChanged();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final referenceField = widget.form.fields
-        .cast<SmartFormFieldModel?>()
-        .firstWhere(
-          (field) => field?.fieldType == SmartFormFieldType.text,
-          orElse: () => null,
-        );
+    final fieldCount = widget.form.fields.length;
+    final fieldLabel = fieldCount == 1 ? '1 campo' : '$fieldCount campos';
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: context.bgCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.borderStrongSoft),
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.form.name,
-                  style: GoogleFonts.outfit(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: context.textPrimary,
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _open = !_open),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_outline_rounded,
+                    color: AppColors.primary,
+                    size: 26,
                   ),
-                ),
-              ),
-              Switch.adaptive(
-                value: widget.form.isActive,
-                onChanged: _toggleActive,
-              ),
-              IconButton(
-                onPressed: _renameForm,
-                icon: Icon(Icons.edit_outlined, color: context.textSecondary),
-              ),
-              IconButton(
-                onPressed: _deleteForm,
-                icon: const Icon(Icons.delete_outline, color: AppColors.error),
-              ),
-              IconButton(
-                onPressed: () => setState(() => _open = !_open),
-                icon: Icon(
-                  _open ? Icons.expand_less : Icons.expand_more,
-                  color: context.textSecondary,
-                ),
-              ),
-            ],
-          ),
-          if (_open) ...[
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _addField,
-                icon: const Icon(Icons.add),
-                label: const Text('Agregar campo'),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.form.name,
+                          style: GoogleFonts.outfit(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: context.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Deja tu contacto · $fieldLabel',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: context.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _EditorVisibilitySwitch(
+                    value: widget.form.isActive,
+                    onChanged: _toggleActive,
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Editar formulario',
+                    onPressed: _editForm,
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      color: context.textSecondary,
+                      size: 22,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Eliminar formulario',
+                    onPressed: _deleteForm,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: AppColors.error,
+                      size: 22,
+                    ),
+                  ),
+                  Icon(
+                    _open
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.arrow_forward_rounded,
+                    color: context.textPrimary,
+                    size: 24,
+                  ),
+                ],
               ),
             ),
+          ),
+          if (_open) ...[
+            const SizedBox(height: 18),
+            Divider(color: context.borderStrongSoft, height: 1),
+            const SizedBox(height: 14),
             if (widget.form.fields.isEmpty)
               Align(
                 alignment: Alignment.centerLeft,
@@ -4159,56 +6474,16 @@ class _DbSmartFormCardState extends State<_DbSmartFormCard> {
                 ),
               )
             else
-              ReorderableListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                buildDefaultDragHandles: false,
-                itemCount: widget.form.fields.length,
-                onReorder: _reorderFields,
-                itemBuilder: (_, i) {
-                  final field = widget.form.fields[i];
-                  final isReferenceNameField = referenceField?.id == field.id;
-                  return ListTile(
-                    key: ValueKey(field.id),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: ReorderableDragStartListener(
-                      index: i,
-                      child: Icon(
-                        Icons.drag_indicator,
-                        color: context.textMuted,
-                      ),
-                    ),
-                    title: Text(field.label),
-                    subtitle: Text(
-                      [
-                        field.fieldType.label,
-                        if (field.isRequired) 'Obligatorio',
-                        if (isReferenceNameField) 'Nombre de referencia',
-                      ].join(' · '),
-                      style: GoogleFonts.dmSans(fontSize: 12),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          onPressed: () => _editField(field),
-                          icon: Icon(
-                            Icons.edit_outlined,
-                            color: context.textSecondary,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => _deleteField(field.id),
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: AppColors.error,
-                          ),
-                        ),
-                      ],
-                    ),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: widget.form.includedFields.map((field) {
+                  return _FieldChip(
+                    icon: _smartFormIncludedFieldIcon(field),
+                    label: field.label,
+                    selected: true,
                   );
-                },
+                }).toList(),
               ),
           ],
         ],
@@ -4217,7 +6492,7 @@ class _DbSmartFormCardState extends State<_DbSmartFormCard> {
   }
 }
 
-// ─── Calendario Tab ───────────────────────────────────────────────────────────
+// ─── Integraciones Tab ────────────────────────────────────────────────────────
 
 class _CalendarioTab extends StatefulWidget {
   final bool calendarEnabled;
@@ -4265,129 +6540,325 @@ class _CalendarioTabState extends State<_CalendarioTab> {
     widget.onChanged(_enabled, payload);
   }
 
+  Future<void> _showIntegrationDialog({CalendarProviderType? initial}) async {
+    CalendarProviderType provider = initial ?? CalendarProviderType.calendly;
+    final providerCtrl = TextEditingController(text: provider.label);
+    final urlCtrl = TextEditingController(text: _controllers[provider]!.text);
+    final labelCtrl = TextEditingController(text: 'Agenda una reunión');
+    bool visible = _enabled;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) {
+          void selectProvider(CalendarProviderType selected) {
+            setDialog(() {
+              provider = selected;
+              providerCtrl.text = selected.label;
+              urlCtrl.text = _controllers[selected]!.text;
+            });
+          }
+
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 32,
+              vertical: 28,
+            ),
+            backgroundColor: ctx.bgCard,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 820,
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.88,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(30),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  initial == null
+                                      ? 'Agregar integración'
+                                      : 'Editar integración',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w800,
+                                    color: ctx.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Conecta herramientas para mostrar agenda, capturar leads o enlazar servicios externos.',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 15,
+                                    color: ctx.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: const Icon(Icons.close_rounded, size: 28),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 26),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          for (final option in CalendarProviderType.values)
+                            _IntegrationTypeCard(
+                              icon: _calendarProviderIcon(option),
+                              title: option.label,
+                              subtitle: _calendarProviderSubtitle(option),
+                              selected: provider == option,
+                              onTap: () => selectProvider(option),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      _EditorDialogLabel('Proveedor'),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: providerCtrl,
+                        readOnly: true,
+                        decoration: _corporateInputDecoration(ctx, 'Proveedor'),
+                      ),
+                      const SizedBox(height: 16),
+                      _EditorDialogLabel('URL pública'),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: urlCtrl,
+                        keyboardType: TextInputType.url,
+                        decoration: _corporateInputDecoration(
+                          ctx,
+                          provider.hint,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _EditorDialogLabel('Etiqueta visible'),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: labelCtrl,
+                        decoration: _corporateInputDecoration(
+                          ctx,
+                          'Agenda una reunión',
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: ctx.bgCard,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: ctx.borderStrongSoft),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.visibility_outlined,
+                              color: AppColors.primary,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Mostrar en el perfil',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: ctx.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Activa esta integración en tu tarjeta pública.',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 12,
+                                      color: ctx.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _EditorVisibilitySwitch(
+                              value: visible,
+                              onChanged: (value) =>
+                                  setDialog(() => visible = value),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 26),
+                      Divider(color: ctx.borderStrongSoft, height: 1),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: Text(
+                              'Cancelar',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          SizedBox(
+                            width: 210,
+                            child: TapLoopButton(
+                              label: 'Guardar',
+                              height: 54,
+                              borderRadius: 999,
+                              icon: const Icon(Icons.save_outlined, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _enabled = visible;
+                                  _controllers[provider]!.text = urlCtrl.text
+                                      .trim();
+                                });
+                                _emitChanges();
+                                Navigator.pop(ctx);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    providerCtrl.dispose();
+    urlCtrl.dispose();
+    labelCtrl.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header ───────────────────────────────────────────────
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Agendar reunión',
-                          style: GoogleFonts.outfit(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: context.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Muestra un botón en tu tarjeta para reservar una reunión',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: context.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch.adaptive(
-                    value: _enabled,
-                    onChanged: (v) {
-                      setState(() => _enabled = v);
-                      _emitChanges();
-                    },
-                    activeTrackColor: AppColors.primary,
-                  ),
-                ],
-              ),
-
-              Divider(color: context.borderColor, height: 1),
-              const SizedBox(height: 28),
-              // ── Provider selection ───────────────────────────────────
               Text(
-                'Integración',
+                'Integraciones',
                 style: GoogleFonts.outfit(
-                  fontSize: 18,
+                  fontSize: 28,
                   fontWeight: FontWeight.w800,
                   color: context.textPrimary,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                'Configura uno o más proveedores. El cliente podrá elegir con cuál agendar.',
+                'Conecta herramientas externas a tu perfil.',
                 style: GoogleFonts.dmSans(
-                  fontSize: 13,
+                  fontSize: 14,
                   color: context.textSecondary,
-                  height: 1.5,
                 ),
               ),
-              const SizedBox(height: 16),
-              ...CalendarProviderType.values.map((provider) {
-                final ctrl = _controllers[provider]!;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        provider.label,
-                        style: GoogleFonts.outfit(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: context.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _EditInputField(
-                        label: '${provider.label} URL',
-                        controller: ctrl,
-                        hint: provider.hint,
-                        keyboardType: TextInputType.url,
-                        enabled: _enabled,
-                        maxLength: FieldValidators.calendarUrlMaxLength,
-                        onChanged: (_) {
-                          setState(() {});
-                          _emitChanges();
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      Divider(color: context.borderColor, height: 1),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 10),
+              const SizedBox(height: 28),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.lightbulb_outline_rounded,
-                    size: 18,
-                    color: context.textSecondary,
-                  ),
-                  const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      'Tip B2B: El botón "Agendar reunión" reduce el ciclo de ventas al eliminar el intercambio de emails para coordinar horarios.',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        color: context.textSecondary,
-                        height: 1.5,
-                      ),
+                    child: _EditorInlineMetric(
+                      icon: Icons.hub_outlined,
+                      value: '1',
+                      label: 'Integraciones',
+                    ),
+                  ),
+                  const SizedBox(width: 34),
+                  Expanded(
+                    child: _EditorInlineMetric(
+                      icon: Icons.check_circle_outline_rounded,
+                      value: _enabled ? '1' : '0',
+                      label: 'Activas',
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 24),
+              TapLoopButton(
+                label: 'Agregar integración',
+                height: 54,
+                borderRadius: 999,
+                icon: const Icon(Icons.add_link_rounded, size: 18),
+                onPressed: _showIntegrationDialog,
+              ),
+              const SizedBox(height: 28),
+              Divider(color: context.borderStrongSoft, height: 1),
+              const SizedBox(height: 24),
+              if (_controllers.values.every((ctrl) => ctrl.text.trim().isEmpty))
+                _EmptyState(
+                  message: 'No hay integraciones configuradas',
+                  hint:
+                      'Agrega una agenda o herramienta externa para mostrarla en tu perfil.',
+                )
+              else
+                ...CalendarProviderType.values
+                    .where(
+                      (provider) =>
+                          _controllers[provider]!.text.trim().isNotEmpty,
+                    )
+                    .map((provider) {
+                      final ctrl = _controllers[provider]!;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _IntegrationRow(
+                          provider: provider,
+                          url: ctrl.text.trim(),
+                          onEdit: () =>
+                              _showIntegrationDialog(initial: provider),
+                        ),
+                      );
+                    }),
+              const SizedBox(height: 34),
+              Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 210,
+                  child: TapLoopButton(
+                    label: 'Guardar cambios',
+                    variant: TapLoopButtonVariant.outline,
+                    height: 54,
+                    borderRadius: 999,
+                    icon: const Icon(
+                      Icons.save_outlined,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    onPressed: _emitChanges,
+                  ),
+                ),
               ),
             ],
           ),
@@ -4395,6 +6866,198 @@ class _CalendarioTabState extends State<_CalendarioTab> {
       ),
     );
   }
+}
+
+class _IntegrationTypeCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _IntegrationTypeCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = selected ? AppColors.primary : context.borderStrongSoft;
+
+    var hovering = false;
+    return StatefulBuilder(
+      builder: (context, setHovering) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setHovering(() => hovering = true),
+          onExit: (_) => setHovering(() => hovering = false),
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 212,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: selected || hovering
+                    ? TapLoopMotion.hoverSurfaceColor(context)
+                    : context.bgCard,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: selected
+                      ? AppColors.primary
+                      : hovering
+                      ? context.borderStrongSoft.withValues(alpha: 0.9)
+                      : borderColor,
+                  width: selected ? 1.6 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(icon, size: 25, color: AppColors.primary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: context.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (selected)
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 37),
+                          child: Text(
+                            subtitle,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: context.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _IntegrationRow extends StatelessWidget {
+  final CalendarProviderType provider;
+  final String url;
+  final VoidCallback onEdit;
+
+  const _IntegrationRow({
+    required this.provider,
+    required this.url,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onEdit,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: context.bgCard,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: context.borderStrongSoft),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.check_circle_outline_rounded,
+                color: AppColors.primary,
+                size: 26,
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Agendar reunión',
+                      style: GoogleFonts.outfit(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${provider.label} · $url',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: context.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 24,
+                color: context.textPrimary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+IconData _calendarProviderIcon(CalendarProviderType provider) {
+  return switch (provider) {
+    CalendarProviderType.calendly => Icons.calendar_month_outlined,
+    CalendarProviderType.googleCalendar => Icons.event_available_outlined,
+    CalendarProviderType.microsoftTeams => Icons.video_call_outlined,
+  };
+}
+
+String _calendarProviderSubtitle(CalendarProviderType provider) {
+  return switch (provider) {
+    CalendarProviderType.calendly => 'Agenda reuniones',
+    CalendarProviderType.googleCalendar => 'Reservas con Google',
+    CalendarProviderType.microsoftTeams => 'Reuniones por Teams',
+  };
 }
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
@@ -4427,56 +7090,6 @@ class _EmptyState extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _FormsLeadNameNotice extends StatelessWidget {
-  final bool compact;
-
-  const _FormsLeadNameNotice({this.compact = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 12 : 14,
-        vertical: compact ? 10 : 12,
-      ),
-      decoration: BoxDecoration(
-        color: context.isDark
-            ? AppColors.primary.withValues(alpha: 0.08)
-            : AppColors.primary.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: context.isDark
-              ? AppColors.primary.withValues(alpha: 0.18)
-              : AppColors.primary.withValues(alpha: 0.12),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            size: compact ? 16 : 18,
-            color: AppColors.primary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'El primer campo de texto del formulario será utilizado como el nombre de referencia del contacto.',
-              style: GoogleFonts.dmSans(
-                fontSize: compact ? 12 : 13,
-                fontWeight: FontWeight.w500,
-                color: context.textSecondary,
-                height: 1.45,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -4563,13 +7176,13 @@ class _EditInputField extends StatelessWidget {
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: hasError ? Colors.red : context.borderColor,
+                color: hasError ? Colors.red : context.borderStrongSoft,
                 width: hasError ? 1.5 : 1,
               ),
             ),
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: context.borderColor),
+              borderSide: BorderSide(color: context.borderStrongSoft),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -4615,7 +7228,7 @@ InputDecoration _corporateInputDecoration(
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: BorderSide(
-        color: hasError ? Colors.red : context.borderColor,
+        color: hasError ? Colors.red : context.borderStrongSoft,
         width: hasError ? 1.2 : 1,
       ),
     ),

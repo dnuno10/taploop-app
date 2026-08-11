@@ -181,8 +181,12 @@ class AppTheme {
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
+              animationDuration: const Duration(milliseconds: 140),
               mouseCursor: const WidgetStatePropertyAll(
                 SystemMouseCursors.click,
+              ),
+              overlayColor: WidgetStatePropertyAll(
+                Colors.white.withValues(alpha: 0.04),
               ),
             ),
       ),
@@ -200,8 +204,12 @@ class AppTheme {
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
+              animationDuration: const Duration(milliseconds: 140),
               mouseCursor: const WidgetStatePropertyAll(
                 SystemMouseCursors.click,
+              ),
+              overlayColor: WidgetStatePropertyAll(
+                Colors.black.withValues(alpha: 0.035),
               ),
             ),
       ),
@@ -214,14 +222,22 @@ class AppTheme {
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
+              animationDuration: const Duration(milliseconds: 140),
               mouseCursor: const WidgetStatePropertyAll(
                 SystemMouseCursors.click,
+              ),
+              overlayColor: WidgetStatePropertyAll(
+                Colors.black.withValues(alpha: 0.035),
               ),
             ),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
+          animationDuration: const Duration(milliseconds: 140),
           mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+          overlayColor: WidgetStatePropertyAll(
+            Colors.black.withValues(alpha: 0.035),
+          ),
         ),
       ),
       checkboxTheme: CheckboxThemeData(
@@ -428,8 +444,12 @@ class AppTheme {
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
+              animationDuration: const Duration(milliseconds: 140),
               mouseCursor: const WidgetStatePropertyAll(
                 SystemMouseCursors.click,
+              ),
+              overlayColor: WidgetStatePropertyAll(
+                Colors.white.withValues(alpha: 0.04),
               ),
             ),
       ),
@@ -447,8 +467,12 @@ class AppTheme {
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
+              animationDuration: const Duration(milliseconds: 140),
               mouseCursor: const WidgetStatePropertyAll(
                 SystemMouseCursors.click,
+              ),
+              overlayColor: WidgetStatePropertyAll(
+                Colors.white.withValues(alpha: 0.055),
               ),
             ),
       ),
@@ -461,14 +485,22 @@ class AppTheme {
                 fontWeight: FontWeight.w600,
               ),
             ).copyWith(
+              animationDuration: const Duration(milliseconds: 140),
               mouseCursor: const WidgetStatePropertyAll(
                 SystemMouseCursors.click,
+              ),
+              overlayColor: WidgetStatePropertyAll(
+                Colors.white.withValues(alpha: 0.055),
               ),
             ),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: ButtonStyle(
+          animationDuration: const Duration(milliseconds: 140),
           mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+          overlayColor: WidgetStatePropertyAll(
+            Colors.white.withValues(alpha: 0.055),
+          ),
         ),
       ),
       checkboxTheme: CheckboxThemeData(

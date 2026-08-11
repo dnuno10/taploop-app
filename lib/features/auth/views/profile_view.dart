@@ -306,22 +306,23 @@ class _AvatarSection extends StatelessWidget {
       children: [
         Stack(
           children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundColor: AppColors.primary,
-              backgroundImage: user.photoUrl != null
-                  ? NetworkImage(user.photoUrl!)
-                  : null,
-              child: user.photoUrl == null
-                  ? Text(
-                      user.initials,
-                      style: GoogleFonts.outfit(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.white,
-                      ),
+            SizedBox(
+              width: 80,
+              height: 80,
+              child: user.photoUrl != null
+                  ? ClipOval(
+                      child: Image.network(user.photoUrl!, fit: BoxFit.cover),
                     )
-                  : null,
+                  : Center(
+                      child: Text(
+                        user.initials,
+                        style: GoogleFonts.outfit(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
             ),
             Positioned(
               right: 0,
