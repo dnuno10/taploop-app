@@ -1373,8 +1373,8 @@ class _ModernSocialCircles extends StatelessWidget {
             width: double.infinity,
             child: Wrap(
               alignment: WrapAlignment.start,
-              spacing: 16,
-              runSpacing: 16,
+              spacing: 18,
+              runSpacing: 18,
               children: [
                 for (final link in links.take(6))
                   Material(
@@ -1384,8 +1384,8 @@ class _ModernSocialCircles extends StatelessWidget {
                       customBorder: const CircleBorder(),
                       onTap: () => _openUrl(link),
                       child: Container(
-                        width: 78,
-                        height: 78,
+                        width: 92,
+                        height: 92,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
@@ -1397,7 +1397,7 @@ class _ModernSocialCircles extends StatelessWidget {
                           child: PlatformIcon.social(
                             platform: link.platform,
                             framed: false,
-                            size: 44,
+                            size: 56,
                           ),
                         ),
                       ),
