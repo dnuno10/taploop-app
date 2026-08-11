@@ -558,8 +558,8 @@ class _ScreenContent extends StatelessWidget {
             children: [
               for (final link in socials.take(5))
                 Container(
-                  width: 50 * scale,
-                  height: 50 * scale,
+                  width: 54 * scale,
+                  height: 54 * scale,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -572,7 +572,7 @@ class _ScreenContent extends StatelessWidget {
                     child: PlatformIcon.social(
                       platform: link.platform,
                       framed: false,
-                      size: 26 * scale,
+                      size: 28 * scale,
                     ),
                   ),
                 ),
