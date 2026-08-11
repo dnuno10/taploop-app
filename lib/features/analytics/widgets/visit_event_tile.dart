@@ -13,7 +13,9 @@ class VisitEventTile extends StatelessWidget {
       event.source == 'link' ||
       event.source == 'contact' ||
       event.source == 'social' ||
-      event.source == 'form';
+      event.source == 'form' ||
+      event.source == 'downloaded_contact' ||
+      event.source == 'share';
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +102,10 @@ class VisitEventTile extends StatelessWidget {
         return 'Red social';
       case 'form':
         return 'Formulario';
+      case 'downloaded_contact':
+        return 'Guardó contacto';
+      case 'share':
+        return 'Compartió perfil';
       case 'nfc':
       case 'qr':
         return 'Escaneo NFC';
@@ -124,6 +130,10 @@ class VisitEventTile extends StatelessWidget {
         return const Color(0xFFEA580C);
       case 'form':
         return const Color(0xFF0891B2);
+      case 'downloaded_contact':
+        return const Color(0xFF16A34A);
+      case 'share':
+        return const Color(0xFF7C3AED);
       default:
         return AppColors.grey;
     }
@@ -143,6 +153,10 @@ class VisitEventTile extends StatelessWidget {
         return Icons.share_outlined;
       case 'form':
         return Icons.assignment_outlined;
+      case 'downloaded_contact':
+        return Icons.person_add_alt_1_outlined;
+      case 'share':
+        return Icons.ios_share_outlined;
       default:
         return Icons.open_in_browser_outlined;
     }
@@ -186,6 +200,10 @@ class _SourceBadge extends StatelessWidget {
         return 'SOCIAL';
       case 'form':
         return 'FORM';
+      case 'downloaded_contact':
+        return 'GUARDADO';
+      case 'share':
+        return 'COMPARTIR';
       default:
         return source!.toUpperCase();
     }
@@ -205,6 +223,10 @@ class _SourceBadge extends StatelessWidget {
         return const Color(0xFFEA580C);
       case 'form':
         return const Color(0xFF0891B2);
+      case 'downloaded_contact':
+        return const Color(0xFF16A34A);
+      case 'share':
+        return const Color(0xFF7C3AED);
       default:
         return AppColors.grey;
     }

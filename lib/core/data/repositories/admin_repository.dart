@@ -17,6 +17,13 @@ class AdminRepository {
   AdminRepository._();
 
   static final _db = SupabaseService.client;
+  static const _profileVisitSources = {'nfc', 'qr', 'link'};
+  static const _clickSources = {
+    'contact',
+    'social',
+    'downloaded_contact',
+    'share',
+  };
 
   // ─── Fetch org members ────────────────────────────────────────────────────
 
@@ -95,16 +102,16 @@ class AdminRepository {
         if (cardId == null) continue;
         final source = row['source'] as String? ?? '';
         final timestamp = DateTime.tryParse(row['timestamp'] as String? ?? '');
-        if (source == 'nfc' || source == 'qr' || source == 'link') {
+        if (_profileVisitSources.contains(source)) {
           profileViewsByCard[cardId] = (profileViewsByCard[cardId] ?? 0) + 1;
         }
         if (source == 'nfc') {
           tapsByCard[cardId] = (tapsByCard[cardId] ?? 0) + 1;
         }
-        if (source == 'contact') {
+        if (source == 'downloaded_contact') {
           contactsSavedByCard[cardId] = (contactsSavedByCard[cardId] ?? 0) + 1;
         }
-        if (source == 'contact' || source == 'social') {
+        if (_clickSources.contains(source)) {
           totalClicksByCard[cardId] = (totalClicksByCard[cardId] ?? 0) + 1;
           final resolved = _resolveLinkReference(
             row: row,
@@ -139,13 +146,13 @@ class AdminRepository {
               cardId,
               () => List.filled(7, 0),
             );
-            if (source == 'nfc' || source == 'qr' || source == 'link') {
+            if (_profileVisitSources.contains(source)) {
               viewsSeries[bucket] += 1;
             }
             if (source == 'nfc') {
               tapsSeries[bucket] += 1;
             }
-            if (source == 'contact' || source == 'social') {
+            if (_clickSources.contains(source)) {
               clicksSeries[bucket] += 1;
             }
           }
@@ -310,10 +317,14 @@ class AdminRepository {
       final resolved = currentLinksByRef['social:$socialLinkId'];
       if (resolved != null) return resolved;
     }
-    return _ResolvedLinkReference(
-      label: source == 'contact' ? 'Contacto' : 'Red social',
-      platform: source,
-    );
+    final fallbackLabel = switch (source) {
+      'contact' => 'Contacto',
+      'social' => 'Red social',
+      'downloaded_contact' => 'Guardó contacto',
+      'share' => 'Compartió perfil',
+      _ => 'Interacción',
+    };
+    return _ResolvedLinkReference(label: fallbackLabel, platform: source);
   }
 
   static Future<Map<String, _ResolvedLinkReference>> _fetchCurrentLinksByRef({

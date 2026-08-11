@@ -410,6 +410,14 @@ class LeadRepository {
       );
     }
 
+    if (source == 'share') {
+      return LeadActionEvent(
+        action: LeadAction.clickedWebsite,
+        timestamp: e.timestamp,
+        customLabel: label?.isNotEmpty == true ? label : 'Compartió perfil',
+      );
+    }
+
     if (source == 'contact' || source == 'social' || source == 'link') {
       final lower = (label ?? '').toLowerCase();
       if (lower.contains('whatsapp')) {

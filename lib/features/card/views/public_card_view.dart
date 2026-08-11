@@ -596,11 +596,9 @@ class _SaveContactButton extends StatelessWidget {
     final fileName = '${_safeFileName(card.name)}.vcf';
     final downloaded = await downloadVCardFile(fileName, vcard);
     if (downloaded) {
-      unawaited(
-        AnalyticsRepository.recordInteraction(
-          cardId: card.id,
-          source: 'downloaded_contact',
-        ),
+      await AnalyticsRepository.recordInteraction(
+        cardId: card.id,
+        source: 'downloaded_contact',
       );
     }
   }
@@ -748,20 +746,20 @@ class _ModernActionButtons extends StatelessWidget {
     final email = _emailContact;
     if (email == null) return;
     final uri = Uri(scheme: 'mailto', path: email.value.trim());
-    final opened = await _launchPublicUri(uri);
-    if (opened) {
-      unawaited(
-        AnalyticsRepository.recordInteraction(
-          cardId: card.id,
-          source: 'contact',
-          contactItemId: email.id,
-        ),
-      );
-    }
+    await AnalyticsRepository.recordInteraction(
+      cardId: card.id,
+      source: 'contact',
+      contactItemId: email.id,
+    );
+    await _launchPublicUri(uri);
   }
 
   Future<void> _share(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: card.publicUrl));
+    await AnalyticsRepository.recordInteraction(
+      cardId: card.id,
+      source: 'share',
+    );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1159,15 +1157,12 @@ class _ContactSection extends StatelessWidget {
         uri = Uri.parse(_normalizeWebUrl(value));
         break;
     }
-    final opened = await _launchPublicUri(uri);
-    if (!opened) return;
-    unawaited(
-      AnalyticsRepository.recordInteraction(
-        cardId: cardId,
-        source: 'contact',
-        contactItemId: item.id,
-      ),
+    await AnalyticsRepository.recordInteraction(
+      cardId: cardId,
+      source: 'contact',
+      contactItemId: item.id,
     );
+    await _launchPublicUri(uri);
   }
 
   String _displayValue(ContactItemModel item) {
@@ -1350,16 +1345,12 @@ class _ModernSocialCircles extends StatelessWidget {
     final normalizedUrl = _normalizePublicSocialUrl(link);
     if (normalizedUrl.isEmpty) return;
     final uri = Uri.parse(normalizedUrl);
-    final opened = await _launchPublicUri(uri);
-    if (opened) {
-      unawaited(
-        AnalyticsRepository.recordInteraction(
-          cardId: cardId,
-          source: 'social',
-          socialLinkId: link.id,
-        ),
-      );
-    }
+    await AnalyticsRepository.recordInteraction(
+      cardId: cardId,
+      source: 'social',
+      socialLinkId: link.id,
+    );
+    await _launchPublicUri(uri);
   }
 
   @override
@@ -1428,15 +1419,12 @@ class _SocialSection extends StatelessWidget {
     final normalizedUrl = _normalizePublicSocialUrl(link);
     if (normalizedUrl.isEmpty) return;
     final uri = Uri.parse(normalizedUrl);
-    final opened = await _launchPublicUri(uri);
-    if (!opened) return;
-    unawaited(
-      AnalyticsRepository.recordInteraction(
-        cardId: cardId,
-        source: 'social',
-        socialLinkId: link.id,
-      ),
+    await AnalyticsRepository.recordInteraction(
+      cardId: cardId,
+      source: 'social',
+      socialLinkId: link.id,
     );
+    await _launchPublicUri(uri);
   }
 
   String _shortHandle(String url) {

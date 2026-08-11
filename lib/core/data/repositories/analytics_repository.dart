@@ -19,6 +19,31 @@ class AnalyticsRepository {
   AnalyticsRepository._();
 
   static final _db = SupabaseService.client;
+  static const _visitorInfoTimeout = Duration(milliseconds: 700);
+
+  static const _profileVisitSources = {'nfc', 'qr', 'link'};
+  static const _clickSources = {
+    'contact',
+    'social',
+    'downloaded_contact',
+    'share',
+  };
+
+  static bool _isProfileVisitSource(String? source) =>
+      _profileVisitSources.contains(source);
+
+  static bool _isClickSource(String? source) => _clickSources.contains(source);
+
+  static Future<Map<String, String?>> _safeVisitorInfo() async {
+    try {
+      return await collectVisitorInfo().timeout(
+        _visitorInfoTimeout,
+        onTimeout: () => <String, String?>{},
+      );
+    } catch (_) {
+      return <String, String?>{};
+    }
+  }
 
   // ─── Analytics summary for a card ────────────────────────────────────────
 
@@ -58,9 +83,7 @@ class AnalyticsRepository {
         .toList();
     final hydratedRangeEvents = await hydrateEvents(rangeEvents);
     final visitEvents = hydratedRangeEvents
-        .where(
-          (e) => e.source == 'nfc' || e.source == 'qr' || e.source == 'link',
-        )
+        .where((e) => _isProfileVisitSource(e.source))
         .toList();
     final tapEvents = hydratedRangeEvents
         .where((e) => e.source == 'nfc')
@@ -69,7 +92,7 @@ class AnalyticsRepository {
         .where((e) => e.source == 'qr')
         .toList();
     final clickEvents = hydratedRangeEvents
-        .where((e) => e.source == 'contact' || e.source == 'social')
+        .where((e) => _isClickSource(e.source))
         .toList();
     final previousRangeEvents = events
         .where(
@@ -79,15 +102,13 @@ class AnalyticsRepository {
         )
         .toList();
     final previousVisitCount = previousRangeEvents
-        .where(
-          (e) => e.source == 'nfc' || e.source == 'qr' || e.source == 'link',
-        )
+        .where((e) => _isProfileVisitSource(e.source))
         .length;
     final previousTapCount = previousRangeEvents
         .where((e) => e.source == 'nfc')
         .length;
     final previousClickCount = previousRangeEvents
-        .where((e) => e.source == 'contact' || e.source == 'social')
+        .where((e) => _isClickSource(e.source))
         .length;
 
     final totalVisits = visitEvents.length;
@@ -164,7 +185,7 @@ class AnalyticsRepository {
   /// source: 'nfc' | 'qr' | 'link'
   static Future<void> recordVisit(String cardId, String source) async {
     try {
-      final info = await collectVisitorInfo();
+      final info = await _safeVisitorInfo();
       await _recordCardVisit(cardId: cardId, source: source, info: info);
     } catch (e) {
       debugPrint('[Analytics] recordVisit error: $e');
@@ -173,7 +194,7 @@ class AnalyticsRepository {
 
   // ─── Record an interaction (contact tap / social tap / form fill) ─────────
 
-  /// source: 'contact' | 'social' | 'form' | 'downloaded_contact'
+  /// source: 'contact' | 'social' | 'form' | 'downloaded_contact' | 'share'
   /// label: displayLabel / platform name / form title
   static Future<void> recordInteraction({
     required String cardId,
@@ -183,7 +204,7 @@ class AnalyticsRepository {
     String? smartFormId,
   }) async {
     try {
-      final info = await collectVisitorInfo();
+      final info = await _safeVisitorInfo();
       await _recordCardVisit(
         cardId: cardId,
         source: source,
@@ -338,6 +359,7 @@ class AnalyticsRepository {
       'social' => 'Red social',
       'form' => 'Formulario',
       'downloaded_contact' => 'Guardó contacto',
+      'share' => 'Compartió perfil',
       'link' => 'Abrió perfil',
       _ => '',
     };
