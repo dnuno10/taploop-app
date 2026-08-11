@@ -553,13 +553,13 @@ class _ScreenContent extends StatelessWidget {
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 14 * scale),
           child: Wrap(
-            spacing: 14 * scale,
-            runSpacing: 14 * scale,
+            spacing: 12 * scale,
+            runSpacing: 12 * scale,
             children: [
               for (final link in socials.take(5))
                 Container(
-                  width: 82 * scale,
-                  height: 82 * scale,
+                  width: 60 * scale,
+                  height: 60 * scale,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -572,7 +572,7 @@ class _ScreenContent extends StatelessWidget {
                     child: PlatformIcon.social(
                       platform: link.platform,
                       framed: false,
-                      size: 50 * scale,
+                      size: 34 * scale,
                     ),
                   ),
                 ),
