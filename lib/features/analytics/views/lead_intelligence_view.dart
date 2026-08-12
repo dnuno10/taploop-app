@@ -6,10 +6,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/data/app_state.dart';
+import '../../../core/data/repositories/admin_repository.dart';
 import '../../../core/data/repositories/lead_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/lead_model.dart';
+import '../models/team_member_model.dart';
+import '../widgets/team_member_filter_dropdown.dart';
 
 // ─── Simulated timeline events ────────────────────────────────────────────────
 
@@ -190,13 +193,16 @@ class LeadIntelligenceView extends StatefulWidget {
 
 class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   List<LeadModel> _allLeads = [];
+  List<TeamMemberModel> _members = [];
   bool _loading = true;
   String? _loadedCardId;
+  String? _loadedOrgId;
+  String? _selectedMemberId;
   final TextEditingController _searchCtrl = TextEditingController();
   String _search = '';
   String _statusFilter = 'all';
   MetricsRealtimeSubscription? _metricsRealtime;
-  String? _realtimeCardId;
+  String? _realtimeOrgId;
 
   @override
   void initState() {
@@ -215,22 +221,23 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   }
 
   void _onAppStateChanged() {
+    final orgId = appState.currentUser?.orgId;
     final cardId = appState.currentCard?.id;
     _bindRealtime();
-    if (cardId == null || cardId == _loadedCardId) return;
+    if (orgId == _loadedOrgId && cardId == _loadedCardId) return;
     if (!mounted) return;
     setState(() => _loading = true);
     _load();
   }
 
   void _bindRealtime() {
-    final cardId = appState.currentCard?.id;
-    if (cardId == _realtimeCardId) return;
+    final orgId = appState.currentUser?.orgId;
+    if (orgId == _realtimeOrgId) return;
     _metricsRealtime?.close();
-    _realtimeCardId = cardId;
-    if (cardId == null || cardId.isEmpty) return;
-    _metricsRealtime = MetricsRealtimeSubscription.forCard(
-      cardId: cardId,
+    _realtimeOrgId = orgId;
+    if (orgId == null || orgId.isEmpty) return;
+    _metricsRealtime = MetricsRealtimeSubscription.forOrganization(
+      orgId: orgId,
       onRefresh: () {
         if (!mounted) return;
         _load();
@@ -240,16 +247,37 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
 
   Future<void> _load() async {
     final cardId = appState.currentCard?.id;
-    if (cardId == null) {
+    final orgId = appState.currentUser?.orgId;
+    if (cardId == null && orgId == null) {
       _loadedCardId = null;
+      _loadedOrgId = null;
       if (mounted) setState(() => _loading = false);
       return;
     }
     try {
-      final data = await LeadRepository.fetchLeadsForCard(cardId);
+      final members = orgId == null
+          ? <TeamMemberModel>[]
+          : await AdminRepository.fetchTeamMembers(orgId);
+      final selectedMemberId = _resolveSelectedMemberId(
+        members: members,
+        currentSelectedId: _selectedMemberId,
+      );
+      final selectedCardIds = _cardIdsForSelection(
+        members: members,
+        selectedMemberId: selectedMemberId,
+        fallbackCardId: cardId,
+      );
+      final leadsByCard = await LeadRepository.fetchLeadsForCards(
+        selectedCardIds,
+      );
+      final data = leadsByCard.values.expand((leads) => leads).toList()
+        ..sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
       if (mounted) {
         setState(() {
           _loadedCardId = cardId;
+          _loadedOrgId = orgId;
+          _members = members;
+          _selectedMemberId = selectedMemberId;
           _allLeads = data;
           _loading = false;
         });
@@ -258,10 +286,38 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
       if (mounted) {
         setState(() {
           _loadedCardId = cardId;
+          _loadedOrgId = orgId;
           _loading = false;
         });
       }
     }
+  }
+
+  String? _resolveSelectedMemberId({
+    required List<TeamMemberModel> members,
+    required String? currentSelectedId,
+  }) {
+    if (currentSelectedId == null || members.isEmpty) return null;
+    return members.any((member) => member.id == currentSelectedId)
+        ? currentSelectedId
+        : null;
+  }
+
+  List<String> _cardIdsForSelection({
+    required List<TeamMemberModel> members,
+    required String? selectedMemberId,
+    required String? fallbackCardId,
+  }) {
+    final selectedMembers = selectedMemberId == null
+        ? members
+        : members.where((member) => member.id == selectedMemberId).toList();
+    final cardIds = selectedMembers
+        .expand((member) => member.cardIds)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet()
+        .toList();
+    if (cardIds.isNotEmpty) return cardIds;
+    return fallbackCardId == null ? const [] : [fallbackCardId];
   }
 
   List<LeadModel> get _leads {
@@ -345,9 +401,34 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
                     ],
                   ),
                 ),
-                if (isDesktop) const _LeadAudienceSelector(),
+                if (isDesktop)
+                  TeamMemberFilterDropdown(
+                    members: _members,
+                    selectedMemberId: _selectedMemberId,
+                    onChanged: (memberId) {
+                      setState(() {
+                        _selectedMemberId = memberId;
+                        _loading = true;
+                      });
+                      _load();
+                    },
+                  ),
               ],
             ),
+            if (!isDesktop) ...[
+              const SizedBox(height: 16),
+              TeamMemberFilterDropdown(
+                members: _members,
+                selectedMemberId: _selectedMemberId,
+                onChanged: (memberId) {
+                  setState(() {
+                    _selectedMemberId = memberId;
+                    _loading = true;
+                  });
+                  _load();
+                },
+              ),
+            ],
             const SizedBox(height: 28),
             if (isDesktop)
               Row(
@@ -418,38 +499,6 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _LeadAudienceSelector extends StatelessWidget {
-  const _LeadAudienceSelector();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        color: context.bgCard,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: context.borderStrongSoft, width: 1.2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Todo',
-            style: GoogleFonts.dmSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: context.textPrimary,
-            ),
-          ),
-          const SizedBox(width: 28),
-          Icon(Icons.keyboard_arrow_down_rounded, color: context.textSecondary),
-        ],
       ),
     );
   }

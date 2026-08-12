@@ -1,8 +1,9 @@
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
+// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use, unused_element
 import 'dart:html' as html;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -24,7 +25,9 @@ import '../../../core/widgets/taploop_toast.dart';
 import '../../analytics/models/team_member_model.dart';
 import '../../card/models/digital_card_model.dart';
 import '../../card/models/contact_item_model.dart';
+import '../../card/models/smart_form_model.dart';
 import '../../card/models/social_link_model.dart';
+import '../../card/views/edit_card_view.dart';
 import '../../card/widgets/digital_profile_preview.dart';
 
 // ─── Form & Calendar support ─────────────────────────────────────────────────
@@ -225,6 +228,40 @@ class _AdminMember {
   ];
 }
 
+class _TeamConsistencySettings {
+  final bool sharedDesign;
+  final bool sharedForms;
+  final bool sharedIntegrations;
+
+  const _TeamConsistencySettings({
+    this.sharedDesign = false,
+    this.sharedForms = false,
+    this.sharedIntegrations = false,
+  });
+
+  factory _TeamConsistencySettings.fromOrg(Map<String, dynamic>? org) {
+    return _TeamConsistencySettings(
+      sharedDesign: org?['shared_design_enabled'] as bool? ?? false,
+      sharedForms: org?['shared_forms_enabled'] as bool? ?? false,
+      sharedIntegrations: org?['shared_integrations_enabled'] as bool? ?? false,
+    );
+  }
+
+  _TeamConsistencySettings copyWith({
+    bool? sharedDesign,
+    bool? sharedForms,
+    bool? sharedIntegrations,
+  }) {
+    return _TeamConsistencySettings(
+      sharedDesign: sharedDesign ?? this.sharedDesign,
+      sharedForms: sharedForms ?? this.sharedForms,
+      sharedIntegrations: sharedIntegrations ?? this.sharedIntegrations,
+    );
+  }
+}
+
+enum _ConsistencyKind { design, forms, integrations }
+
 // ─── AdminView ────────────────────────────────────────────────────────────────
 
 class AdminView extends StatefulWidget {
@@ -236,9 +273,13 @@ class AdminView extends StatefulWidget {
 
 class _AdminViewState extends State<AdminView> {
   List<_AdminMember> _members = [];
+  _TeamConsistencySettings _consistency = const _TeamConsistencySettings();
   bool _loading = true;
+  bool _syncingConsistency = false;
+  _ConsistencyKind? _expandedConsistencyKind;
   MetricsRealtimeSubscription? _metricsRealtime;
   String? _realtimeOrgId;
+  final GlobalKey _profilesKey = GlobalKey();
 
   @override
   void initState() {
@@ -285,11 +326,17 @@ class _AdminViewState extends State<AdminView> {
       return;
     }
     try {
-      final teamMembers = await AdminRepository.fetchTeamMembers(orgId);
+      final results = await Future.wait<dynamic>([
+        AdminRepository.fetchTeamMembers(orgId),
+        AdminRepository.fetchOrg(orgId),
+      ]);
+      final teamMembers = results[0] as List<TeamMemberModel>;
+      final orgData = results[1] as Map<String, dynamic>?;
       final hydratedMembers = await _buildMembers(teamMembers);
       if (mounted) {
         setState(() {
           _members = hydratedMembers;
+          _consistency = _TeamConsistencySettings.fromOrg(orgData);
           _loading = false;
         });
       }
@@ -349,6 +396,9 @@ class _AdminViewState extends State<AdminView> {
   }
 
   static List<_AdminSmartForm> _formsFromCard(DigitalCardModel card) {
+    if (card.smartForms.isNotEmpty) {
+      return _adminFormsFromSmartForms(card.smartForms);
+    }
     final enabledIds = card.enabledForms.toSet();
     return _AdminMember._defaultForms()
         .map(
@@ -372,6 +422,31 @@ class _AdminViewState extends State<AdminView> {
         .toList();
   }
 
+  static List<_AdminSmartForm> _adminFormsFromSmartForms(
+    List<SmartFormModel> forms,
+  ) {
+    return forms
+        .map(
+          (form) => _AdminSmartForm(
+            id: form.id,
+            title: form.name,
+            description: form.description ?? 'Formulario de captura',
+            icon: Icons.description_outlined,
+            enabled: form.isActive,
+            fields: form.fields
+                .map(
+                  (field) => _AdminFormField(
+                    label: field.label,
+                    type: _adminFieldTypeFromSmartField(field.fieldType),
+                    required: field.isRequired,
+                  ),
+                )
+                .toList(),
+          ),
+        )
+        .toList();
+  }
+
   static _AdminCalProvider? _providerFromUrl(String? url) {
     final value = url?.trim().toLowerCase();
     if (value == null || value.isEmpty) return null;
@@ -383,6 +458,18 @@ class _AdminViewState extends State<AdminView> {
       return _AdminCalProvider.outlook;
     }
     return null;
+  }
+
+  static _AdminFieldType _adminFieldTypeFromSmartField(
+    SmartFormFieldType type,
+  ) {
+    return switch (type) {
+      SmartFormFieldType.email => _AdminFieldType.email,
+      SmartFormFieldType.phone => _AdminFieldType.phone,
+      SmartFormFieldType.textarea => _AdminFieldType.textarea,
+      SmartFormFieldType.number ||
+      SmartFormFieldType.text => _AdminFieldType.text,
+    };
   }
 
   void _editMember(_AdminMember member) {
@@ -403,17 +490,7 @@ class _AdminViewState extends State<AdminView> {
                 .clamp(960.0, 1180.0)
                 .toDouble(),
             height: MediaQuery.of(context).size.height * 0.88,
-            child: _EditMemberDialog(
-              member: member,
-              onSave: (updated) {
-                setState(() {
-                  final idx = _members.indexWhere(
-                    (m) => m.member.id == updated.member.id,
-                  );
-                  if (idx != -1) _members[idx] = updated;
-                });
-              },
-            ),
+            child: _EditMemberDialog(member: member, onSave: _saveMember),
           ),
         ),
       );
@@ -436,19 +513,402 @@ class _AdminViewState extends State<AdminView> {
             child: _EditMemberDialog(
               member: member,
               scrollController: ctrl,
-              onSave: (updated) {
-                setState(() {
-                  final idx = _members.indexWhere(
-                    (m) => m.member.id == updated.member.id,
-                  );
-                  if (idx != -1) _members[idx] = updated;
-                });
-              },
+              onSave: _saveMember,
             ),
           ),
         ),
       );
     }
+  }
+
+  Future<void> _saveMember(_AdminMember updated) async {
+    try {
+      await AdminRepository.saveAdminMember(
+        card: updated.card,
+        contacts: updated.card.contactItems,
+        socialLinks: updated.card.socialLinks,
+        smartForms: _smartFormsFromAdminForms(updated.card.id, updated.forms),
+      );
+
+      final cardIds = _allMemberCardIds();
+      if (_consistency.sharedDesign) {
+        await AdminRepository.applySharedDesign(
+          sourceCard: updated.card,
+          targetCardIds: cardIds,
+        );
+      }
+      if (_consistency.sharedForms) {
+        await AdminRepository.applySharedForms(
+          sourceCardId: updated.card.id,
+          targetCardIds: cardIds,
+        );
+      }
+      if (_consistency.sharedIntegrations) {
+        await AdminRepository.applySharedIntegrations(
+          sourceCard: updated.card,
+          targetCardIds: cardIds,
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        final idx = _members.indexWhere(
+          (m) => m.member.id == updated.member.id,
+        );
+        if (idx != -1) _members[idx] = updated;
+      });
+      TapLoopToast.show(
+        context,
+        'Perfil actualizado correctamente.',
+        TapLoopToastType.success,
+      );
+      await _loadData();
+    } catch (_) {
+      if (!mounted) return;
+      TapLoopToast.show(
+        context,
+        'No se pudieron guardar los cambios. Revisa la conexión e intenta de nuevo.',
+        TapLoopToastType.error,
+      );
+      rethrow;
+    }
+  }
+
+  List<String> _allMemberCardIds() {
+    return _members
+        .map((member) => member.card.id)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet()
+        .toList();
+  }
+
+  _AdminMember? _sourceMemberForSharedSettings() {
+    final currentCardId = appState.currentCard?.id;
+    if (currentCardId != null && currentCardId.isNotEmpty) {
+      final match = _members.cast<_AdminMember?>().firstWhere(
+        (member) => member?.card.id == currentCardId,
+        orElse: () => null,
+      );
+      if (match != null) return match;
+    }
+    return _members.isEmpty ? null : _members.first;
+  }
+
+  Future<void> _toggleConsistency({
+    required _ConsistencyKind kind,
+    required bool enabled,
+  }) async {
+    final orgId = appState.currentUser?.orgId;
+    final source = _sourceMemberForSharedSettings();
+    if (orgId == null || orgId.isEmpty || source == null) return;
+    final previous = _consistency;
+    setState(() {
+      _syncingConsistency = true;
+      _expandedConsistencyKind = enabled ? kind : _expandedConsistencyKind;
+      _consistency = switch (kind) {
+        _ConsistencyKind.design => _consistency.copyWith(sharedDesign: enabled),
+        _ConsistencyKind.forms => _consistency.copyWith(sharedForms: enabled),
+        _ConsistencyKind.integrations => _consistency.copyWith(
+          sharedIntegrations: enabled,
+        ),
+      };
+    });
+    try {
+      await AdminRepository.updateOrgConsistencySettings(
+        orgId: orgId,
+        sharedDesignEnabled: kind == _ConsistencyKind.design ? enabled : null,
+        sharedFormsEnabled: kind == _ConsistencyKind.forms ? enabled : null,
+        sharedIntegrationsEnabled: kind == _ConsistencyKind.integrations
+            ? enabled
+            : null,
+      );
+      if (enabled) {
+        final cardIds = _allMemberCardIds();
+        switch (kind) {
+          case _ConsistencyKind.design:
+            await AdminRepository.applySharedDesign(
+              sourceCard: source.card,
+              targetCardIds: cardIds,
+            );
+            break;
+          case _ConsistencyKind.forms:
+            await AdminRepository.applySharedForms(
+              sourceCardId: source.card.id,
+              targetCardIds: cardIds,
+            );
+            break;
+          case _ConsistencyKind.integrations:
+            await AdminRepository.applySharedIntegrations(
+              sourceCard: source.card,
+              targetCardIds: cardIds,
+            );
+            break;
+        }
+      }
+      if (!mounted) return;
+      if (!enabled && _expandedConsistencyKind == kind) {
+        setState(() => _expandedConsistencyKind = null);
+      }
+      TapLoopToast.show(
+        context,
+        enabled
+            ? 'Configuración compartida aplicada a la organización.'
+            : 'Configuración compartida desactivada.',
+        TapLoopToastType.success,
+      );
+      await _loadData();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _consistency = previous);
+      TapLoopToast.show(
+        context,
+        'No se pudo actualizar la consistencia. Ejecuta la migración de BD si aún no existe.',
+        TapLoopToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _syncingConsistency = false);
+    }
+  }
+
+  Future<void> _updateSharedDesign(DigitalCardModel sourceCard) async {
+    final cardIds = _allMemberCardIds();
+    if (cardIds.isEmpty) return;
+    setState(() {
+      _members = _members.map((member) {
+        return _copyMemberWithCard(
+          member,
+          member.card.copyWith(
+            themeStyle: sourceCard.themeStyle,
+            primaryColor: sourceCard.primaryColor,
+            backgroundColorStart: sourceCard.backgroundColorStart,
+            backgroundColorEnd: sourceCard.backgroundColorEnd,
+            profileDesign: sourceCard.profileDesign,
+            layoutStyle: sourceCard.profileDesign.compatibleLayoutStyle,
+            bgStyle: sourceCard.bgStyle,
+            bgColor: sourceCard.bgColor,
+            bgColorEnd: sourceCard.bgColorEnd,
+            showVerifiedBadge: sourceCard.showVerifiedBadge,
+          ),
+        );
+      }).toList();
+    });
+    try {
+      await AdminRepository.applySharedDesign(
+        sourceCard: sourceCard,
+        targetCardIds: cardIds,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      TapLoopToast.show(
+        context,
+        'No se pudo guardar el diseño compartido.',
+        TapLoopToastType.error,
+      );
+    }
+  }
+
+  Future<void> _updateSharedForms(List<_AdminSmartForm> forms) async {
+    final source = _sourceMemberForSharedSettings();
+    if (source == null) return;
+    setState(() {
+      _members = _members
+          .map(
+            (member) => _copyMemberWithForms(member, _cloneAdminForms(forms)),
+          )
+          .toList();
+    });
+    try {
+      await AdminRepository.applySharedForms(
+        sourceCardId: source.card.id,
+        targetCardIds: _allMemberCardIds(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      TapLoopToast.show(
+        context,
+        'No se pudo guardar el formulario compartido.',
+        TapLoopToastType.error,
+      );
+    }
+  }
+
+  Future<void> _updateSharedIntegration({
+    required _AdminCalProvider? provider,
+    required String? url,
+  }) async {
+    final source = _sourceMemberForSharedSettings();
+    if (source == null) return;
+    final cleanUrl = url?.trim() ?? '';
+    final nextCard = source.card.copyWith(
+      calendarEnabled: provider != null && cleanUrl.isNotEmpty,
+      calendarUrl: cleanUrl,
+    );
+    setState(() {
+      _members = _members.map((member) {
+        return _AdminMember(
+          member: member.member,
+          card: member.card.copyWith(
+            calendarEnabled: nextCard.calendarEnabled,
+            calendarUrl: nextCard.calendarUrl,
+          ),
+          isActive: member.isActive,
+          forms: member.forms,
+          calendarProvider: provider,
+          calendarioUrl: cleanUrl.isEmpty ? null : cleanUrl,
+        );
+      }).toList();
+    });
+    try {
+      await AdminRepository.applySharedIntegrations(
+        sourceCard: nextCard,
+        targetCardIds: _allMemberCardIds(),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      TapLoopToast.show(
+        context,
+        'No se pudo guardar la integración compartida.',
+        TapLoopToastType.error,
+      );
+    }
+  }
+
+  static _AdminMember _copyMemberWithCard(
+    _AdminMember member,
+    DigitalCardModel card, {
+    _AdminCalProvider? calendarProvider,
+    String? calendarioUrl,
+  }) {
+    return _AdminMember(
+      member: member.member,
+      card: card,
+      isActive: member.isActive,
+      forms: member.forms,
+      calendarProvider: calendarProvider ?? member.calendarProvider,
+      calendarioUrl: calendarioUrl ?? member.calendarioUrl,
+    );
+  }
+
+  static _AdminMember _copyMemberWithForms(
+    _AdminMember member,
+    List<_AdminSmartForm> forms,
+  ) {
+    return _AdminMember(
+      member: member.member,
+      card: member.card,
+      isActive: member.isActive,
+      forms: forms,
+      calendarProvider: member.calendarProvider,
+      calendarioUrl: member.calendarioUrl,
+    );
+  }
+
+  static List<_AdminSmartForm> _cloneAdminForms(List<_AdminSmartForm> forms) {
+    return forms
+        .map(
+          (form) => _AdminSmartForm(
+            id: form.id,
+            title: form.title,
+            description: form.description,
+            icon: form.icon,
+            enabled: form.enabled,
+            fields: form.fields
+                .map(
+                  (field) => _AdminFormField(
+                    label: field.label,
+                    type: field.type,
+                    required: field.required,
+                  ),
+                )
+                .toList(),
+          ),
+        )
+        .toList();
+  }
+
+  void _scrollToProfiles() {
+    final context = _profilesKey.currentContext;
+    if (context == null) return;
+    Scrollable.ensureVisible(
+      context,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _shareAccess() async {
+    final orgId = appState.currentUser?.orgId;
+    await Clipboard.setData(
+      ClipboardData(text: orgId == null ? 'TapLoop' : 'Organización: $orgId'),
+    );
+    if (!mounted) return;
+    TapLoopToast.show(
+      context,
+      'Referencia de acceso copiada.',
+      TapLoopToastType.success,
+    );
+  }
+
+  void _showInviteUnavailable() {
+    TapLoopToast.show(
+      context,
+      'El flujo de invitaciones aún no está configurado en la base de datos.',
+      TapLoopToastType.warning,
+    );
+  }
+
+  static List<SmartFormModel> _smartFormsFromAdminForms(
+    String cardId,
+    List<_AdminSmartForm> forms,
+  ) {
+    return forms.where((form) => form.enabled).map((form) {
+      final includedFields = _includedFieldsFromAdminFields(form.fields);
+      return SmartFormModel(
+        id: form.id.startsWith('form_') || form.id.length > 20 ? form.id : '',
+        cardId: cardId,
+        name: form.title,
+        description: form.description,
+        isActive: form.enabled,
+        includedFields: includedFields.isEmpty
+            ? const [SmartFormIncludedField.name, SmartFormIncludedField.email]
+            : includedFields,
+      );
+    }).toList();
+  }
+
+  static List<SmartFormIncludedField> _includedFieldsFromAdminFields(
+    List<_AdminFormField> fields,
+  ) {
+    final selected = <SmartFormIncludedField>{};
+    for (final field in fields) {
+      final label = field.label.toLowerCase();
+      if (label.contains('nombre')) selected.add(SmartFormIncludedField.name);
+      if (label.contains('correo') ||
+          label.contains('email') ||
+          field.type == _AdminFieldType.email) {
+        selected.add(SmartFormIncludedField.email);
+      }
+      if (label.contains('tel') ||
+          label.contains('whatsapp') ||
+          field.type == _AdminFieldType.phone) {
+        selected.add(SmartFormIncludedField.phone);
+      }
+      if (label.contains('empresa')) {
+        selected.add(SmartFormIncludedField.company);
+      }
+      if (label.contains('mensaje') ||
+          label.contains('descrip') ||
+          field.type == _AdminFieldType.textarea) {
+        selected.add(SmartFormIncludedField.message);
+      }
+      if (label.contains('presupuesto')) {
+        selected.add(SmartFormIncludedField.budget);
+      }
+      if (label.contains('fecha')) selected.add(SmartFormIncludedField.date);
+    }
+    return smartFormIncludedFieldOrder
+        .where((field) => selected.contains(field))
+        .toList();
   }
 
   @override
@@ -457,40 +917,10 @@ class _AdminViewState extends State<AdminView> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final isDesktop = Responsive.isDesktop(context);
-    final hPad = Responsive.isMobile(context) ? 20.0 : 24.0;
+    final hPad = Responsive.isMobile(context) ? 20.0 : 32.0;
     final activeMembers = _members.where((member) => member.isActive).toList();
     final activeCount = activeMembers.length;
-    final totalTaps = activeMembers.fold(
-      0,
-      (sum, member) => sum + member.member.taps,
-    );
-    final totalLeads = activeMembers.fold(
-      0,
-      (sum, member) => sum + member.member.leads,
-    );
-    final totalViews = activeMembers.fold(
-      0,
-      (sum, member) => sum + member.member.profileViews,
-    );
-    final totalClicks = activeMembers.fold(
-      0,
-      (sum, member) => sum + member.member.totalClicks,
-    );
-    final viewsSeries = _sumAdminSeries(
-      activeMembers.map((member) => member.member.viewsByDay).toList(),
-    );
-    final tapsSeries = _sumAdminSeries(
-      activeMembers.map((member) => member.member.tapsByDay).toList(),
-    );
-    final clicksSeries = _sumAdminSeries(
-      activeMembers.map((member) => member.member.clicksByDay).toList(),
-    );
-    final rankedMembers = [...activeMembers]
-      ..sort((a, b) {
-        final tapsCompare = b.member.taps.compareTo(a.member.taps);
-        if (tapsCompare != 0) return tapsCompare;
-        return b.member.totalClicks.compareTo(a.member.totalClicks);
-      });
+    final inactiveCount = _members.length - activeCount;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -509,16 +939,17 @@ class _AdminViewState extends State<AdminView> {
                   Text(
                     'Administración',
                     style: GoogleFonts.outfit(
-                      fontSize: 28,
+                      fontSize: isDesktop ? 42 : 30,
                       fontWeight: FontWeight.w800,
                       color: context.textPrimary,
+                      height: 1.0,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 10),
                   Text(
-                    'Controla el equipo, formularios, calendario y configuración operativa desde un solo lugar.',
+                    'Centraliza la gestión de tu equipo, su identidad y su operación desde un solo lugar.',
                     style: GoogleFonts.dmSans(
-                      fontSize: 13,
+                      fontSize: 15,
                       color: context.textSecondary,
                     ),
                   ),
@@ -529,94 +960,42 @@ class _AdminViewState extends State<AdminView> {
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 24),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: context.bgCard,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ─ Company header ──────────────────────────
-                    _CompanyHeader(),
-                    const SizedBox(height: 18),
-
-                    _AdminSummaryStrip(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _CompanyHeader(onManageTeam: _scrollToProfiles),
+                  const SizedBox(height: 20),
+                  _TeamConsistencyPanel(
+                    settings: _consistency,
+                    syncing: _syncingConsistency,
+                    expandedKind: _expandedConsistencyKind,
+                    sourceMember: _sourceMemberForSharedSettings(),
+                    onToggle: _toggleConsistency,
+                    onSelectKind: (kind) {
+                      setState(() => _expandedConsistencyKind = kind);
+                    },
+                    onDesignChanged: _updateSharedDesign,
+                    onFormsChanged: _updateSharedForms,
+                    onIntegrationChanged: _updateSharedIntegration,
+                  ),
+                  const SizedBox(height: 20),
+                  if (_members.isEmpty)
+                    const EmptyDataState(
+                      hint: 'Aún no hay miembros del equipo para mostrar.',
+                    )
+                  else
+                    _TeamProfilesPanel(
+                      key: _profilesKey,
+                      members: _members,
                       activeCount: activeCount,
-                      totalCount: _members.length,
-                      totalTaps: totalTaps,
-                      totalLeads: totalLeads,
-                      totalViews: totalViews,
-                      totalClicks: totalClicks,
+                      inactiveCount: inactiveCount,
+                      onView: _viewMember,
+                      onEdit: _editMember,
+                      onToggle: _toggleMember,
+                      onInvite: _showInviteUnavailable,
                     ),
-                    const SizedBox(height: 18),
-
-                    if (_members.isEmpty)
-                      const EmptyDataState(
-                        hint: 'Aún no hay miembros del equipo para mostrar.',
-                      )
-                    else ...[
-                      isDesktop
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 7,
-                                  child: _AdminPerformancePanel(
-                                    viewsSeries: viewsSeries,
-                                    tapsSeries: tapsSeries,
-                                    clicksSeries: clicksSeries,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  flex: 4,
-                                  child: _AdminTeamHighlights(
-                                    members: rankedMembers,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Column(
-                              children: [
-                                _AdminPerformancePanel(
-                                  viewsSeries: viewsSeries,
-                                  tapsSeries: tapsSeries,
-                                  clicksSeries: clicksSeries,
-                                ),
-                                const SizedBox(height: 16),
-                                _AdminTeamHighlights(members: rankedMembers),
-                              ],
-                            ),
-                      const SizedBox(height: 24),
-
-                      // ─ Members list ───────────────────────────
-                      Text(
-                        'Equipo',
-                        style: GoogleFonts.outfit(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w800,
-                          color: context.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      isDesktop
-                          ? _DesktopMemberGrid(
-                              members: _members,
-                              onEdit: _editMember,
-                              onToggle: _toggleMember,
-                            )
-                          : _MobileMembers(
-                              members: _members,
-                              onEdit: _editMember,
-                              onToggle: _toggleMember,
-                            ),
-                    ],
-                    const SizedBox(height: 32),
-                  ],
-                ),
+                  const SizedBox(height: 32),
+                ],
               ),
             ),
           ),
@@ -659,6 +1038,11 @@ class _AdminViewState extends State<AdminView> {
     }
   }
 
+  void _viewMember(_AdminMember member) {
+    final url = member.card.publicUrl;
+    html.window.open(url, '_blank');
+  }
+
   void _showAdminEditBlockedToast() {
     TapLoopToast.show(
       context,
@@ -671,7 +1055,9 @@ class _AdminViewState extends State<AdminView> {
 // ─── Company Header ───────────────────────────────────────────────────────────
 
 class _CompanyHeader extends StatefulWidget {
-  const _CompanyHeader();
+  final VoidCallback onManageTeam;
+
+  const _CompanyHeader({required this.onManageTeam});
 
   @override
   State<_CompanyHeader> createState() => _CompanyHeaderState();
@@ -859,107 +1245,1797 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
       listenable: appState,
       builder: (context, _) {
         final card = appState.currentCard;
-        final company = card?.company ?? '';
+        final company = (card?.company.trim().isNotEmpty ?? false)
+            ? card!.company
+            : 'Organización';
         final logoUrl = _organizationLogoUrl ?? card?.companyLogoUrl;
-        final content = Row(
-          children: [
-            GestureDetector(
-              onTap: appState.currentUser?.orgId == null
-                  ? null
-                  : _pickAndUploadLogo,
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: context.bgPage,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.borderColor),
-                  image: logoUrl != null
-                      ? DecorationImage(
-                          image: NetworkImage(logoUrl),
-                          fit: BoxFit.contain,
-                        )
-                      : null,
-                ),
-                child: logoUrl == null
-                    ? Center(
-                        child: Text(
-                          _initials(company),
-                          style: GoogleFonts.outfit(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: context.textSecondary,
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    company,
-                    style: GoogleFonts.outfit(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: context.textPrimary,
+        final isDesktop = Responsive.isDesktop(context);
+
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(
+            isDesktop ? 34 : 22,
+            28,
+            isDesktop ? 34 : 22,
+            28,
+          ),
+          decoration: BoxDecoration(
+            color: context.bgCard,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: context.borderStrongSoft, width: 1.1),
+          ),
+          child: isDesktop
+              ? Row(
+                  children: [
+                    _CompanyLogo(
+                      logoUrl: logoUrl,
+                      initials: _initials(company),
+                      onTap: appState.currentUser?.orgId == null
+                          ? null
+                          : _pickAndUploadLogo,
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Centro de administración del equipo y su operación comercial.',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      color: context.textSecondary,
-                    ),
-                  ),
-                  if (appState.currentUser?.orgId != null) ...[
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: _pickAndUploadLogo,
+                    const SizedBox(width: 28),
+                    Expanded(child: _CompanyTitle(company: company)),
+                    const SizedBox(width: 18),
+                    _AdminHeroButton(
                       icon: _uploading
-                          ? SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.textPrimary,
-                              ),
-                            )
-                          : const Icon(Icons.upload_outlined, size: 16),
-                      label: Text(_uploading ? 'Cargando...' : 'Cargar imagen'),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(0, 32),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: context.textPrimary,
+                          ? Icons.hourglass_top_rounded
+                          : Icons.edit_outlined,
+                      label: _uploading ? 'Cargando...' : 'Cambiar logo',
+                      onTap: _uploading ? null : _pickAndUploadLogo,
+                    ),
+                    const SizedBox(width: 12),
+                    _AdminHeroButton(
+                      icon: Icons.groups_2_outlined,
+                      label: 'Gestionar equipo',
+                      onTap: widget.onManageTeam,
+                    ),
+                    const SizedBox(width: 10),
+                    _AdminCircleAction(
+                      icon: Icons.delete_outline_rounded,
+                      onTap: () => TapLoopToast.show(
+                        context,
+                        'La eliminación de organización no está habilitada.',
+                        TapLoopToastType.warning,
                       ),
                     ),
                   ],
-                ],
-              ),
-            ),
-          ],
-        );
-
-        return Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: context.bgCard,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-          ),
-          child: content,
-        ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05, end: 0);
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _CompanyLogo(
+                          logoUrl: logoUrl,
+                          initials: _initials(company),
+                          onTap: appState.currentUser?.orgId == null
+                              ? null
+                              : _pickAndUploadLogo,
+                        ),
+                        const SizedBox(width: 18),
+                        Expanded(child: _CompanyTitle(company: company)),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        _AdminHeroButton(
+                          icon: Icons.edit_outlined,
+                          label: 'Cambiar logo',
+                          onTap: _uploading ? null : _pickAndUploadLogo,
+                        ),
+                        _AdminHeroButton(
+                          icon: Icons.groups_2_outlined,
+                          label: 'Gestionar equipo',
+                          onTap: widget.onManageTeam,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+        ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.04, end: 0);
       },
     );
   }
 }
 
+class _CompanyLogo extends StatelessWidget {
+  final String? logoUrl;
+  final String initials;
+  final VoidCallback? onTap;
+
+  const _CompanyLogo({
+    required this.logoUrl,
+    required this.initials,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 92,
+        height: 92,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: context.bgCard,
+          shape: BoxShape.circle,
+          border: Border.all(color: context.borderStrongSoft, width: 1.1),
+          image: logoUrl != null
+              ? DecorationImage(
+                  image: NetworkImage(logoUrl!),
+                  fit: BoxFit.contain,
+                )
+              : null,
+        ),
+        child: logoUrl == null
+            ? Text(
+                initials,
+                style: GoogleFonts.outfit(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: context.textPrimary,
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+}
+
+class _CompanyTitle extends StatelessWidget {
+  final String company;
+
+  const _CompanyTitle({required this.company});
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 14,
+      runSpacing: 8,
+      children: [
+        Text(
+          company,
+          style: GoogleFonts.outfit(
+            fontSize: 34,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+            height: 1.0,
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppColors.primary, width: 1.2),
+          ),
+          child: Text(
+            'Plan ENTERPRISE',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AdminHeroButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _AdminHeroButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: context.textPrimary,
+        side: BorderSide(color: context.borderStrongSoft, width: 1.2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        minimumSize: const Size(0, 54),
+        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
+        textStyle: GoogleFonts.dmSans(
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminCircleAction extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _AdminCircleAction({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          color: context.bgCard,
+          shape: BoxShape.circle,
+          border: Border.all(color: context.borderStrongSoft, width: 1.1),
+        ),
+        child: Icon(icon, color: context.textPrimary, size: 24),
+      ),
+    );
+  }
+}
+
 // ─── Summary Strip ────────────────────────────────────────────────────────────
+
+class _TeamConsistencyPanel extends StatelessWidget {
+  final _TeamConsistencySettings settings;
+  final bool syncing;
+  final _ConsistencyKind? expandedKind;
+  final _AdminMember? sourceMember;
+  final Future<void> Function({
+    required _ConsistencyKind kind,
+    required bool enabled,
+  })
+  onToggle;
+  final ValueChanged<_ConsistencyKind> onSelectKind;
+  final ValueChanged<DigitalCardModel> onDesignChanged;
+  final ValueChanged<List<_AdminSmartForm>> onFormsChanged;
+  final Future<void> Function({
+    required _AdminCalProvider? provider,
+    required String? url,
+  })
+  onIntegrationChanged;
+
+  const _TeamConsistencyPanel({
+    required this.settings,
+    required this.syncing,
+    required this.expandedKind,
+    required this.sourceMember,
+    required this.onToggle,
+    required this.onSelectKind,
+    required this.onDesignChanged,
+    required this.onFormsChanged,
+    required this.onIntegrationChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _ConsistencyItem(
+        kind: _ConsistencyKind.design,
+        icon: Icons.palette_outlined,
+        title: 'Diseño compartido',
+        description: 'Usa los mismos colores, portada y estilo visual.',
+        enabled: settings.sharedDesign,
+      ),
+      _ConsistencyItem(
+        kind: _ConsistencyKind.forms,
+        icon: Icons.dynamic_form_outlined,
+        title: 'Formulario compartido',
+        description:
+            'Usa el mismo formulario de captura para todos los perfiles.',
+        enabled: settings.sharedForms,
+      ),
+      _ConsistencyItem(
+        kind: _ConsistencyKind.integrations,
+        icon: Icons.add_link_rounded,
+        title: 'Integración compartida',
+        description:
+            'Usa las mismas conexiones externas para todos los perfiles.',
+        enabled: settings.sharedIntegrations,
+      ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(34, 34, 34, 34),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Consistencia del equipo',
+            style: GoogleFonts.outfit(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Define qué elementos se mantienen iguales para todos los perfiles y cuáles puede personalizar cada miembro.',
+            style: GoogleFonts.dmSans(
+              fontSize: 16,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 30),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 980 ? 3 : 1;
+              final gap = 18.0;
+              final width =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: items
+                    .map(
+                      (item) => SizedBox(
+                        width: width,
+                        child: _ConsistencyCard(
+                          item: item,
+                          syncing: syncing,
+                          selected: expandedKind == item.kind,
+                          onToggle: (enabled) =>
+                              onToggle(kind: item.kind, enabled: enabled),
+                          onSelect: () {
+                            if (item.enabled) onSelectKind(item.kind);
+                          },
+                        ),
+                      ),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+          if (expandedKind != null && sourceMember != null) ...[
+            const SizedBox(height: 24),
+            _SharedConfigurationSurface(
+              kind: expandedKind!,
+              member: sourceMember!,
+              onDesignChanged: onDesignChanged,
+              onFormsChanged: onFormsChanged,
+              onIntegrationChanged: onIntegrationChanged,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ConsistencyItem {
+  final _ConsistencyKind kind;
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool enabled;
+
+  const _ConsistencyItem({
+    required this.kind,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.enabled,
+  });
+}
+
+class _ConsistencyCard extends StatelessWidget {
+  final _ConsistencyItem item;
+  final bool syncing;
+  final bool selected;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onSelect;
+
+  const _ConsistencyCard({
+    required this.item,
+    required this.syncing,
+    required this.selected,
+    required this.onToggle,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onSelect,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        height: 236,
+        padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.04)
+              : context.bgCard,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? AppColors.primary : context.borderStrongSoft,
+            width: 1.1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(item.icon, color: AppColors.primary, size: 32),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                          height: 1.05,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        item.description,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 16,
+                          color: context.textSecondary,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            Row(
+              children: [
+                Icon(
+                  item.enabled
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.pause_circle_outline_rounded,
+                  size: 20,
+                  color: item.enabled
+                      ? AppColors.success
+                      : context.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  item.enabled ? 'Activo' : 'Inactivo',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: item.enabled
+                        ? AppColors.success
+                        : context.textSecondary,
+                  ),
+                ),
+                const Spacer(),
+                Switch.adaptive(
+                  value: item.enabled,
+                  onChanged: syncing ? null : onToggle,
+                  activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
+                  activeThumbColor: AppColors.primary,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SharedConfigurationSurface extends StatelessWidget {
+  final _ConsistencyKind kind;
+  final _AdminMember member;
+  final ValueChanged<DigitalCardModel> onDesignChanged;
+  final ValueChanged<List<_AdminSmartForm>> onFormsChanged;
+  final Future<void> Function({
+    required _AdminCalProvider? provider,
+    required String? url,
+  })
+  onIntegrationChanged;
+
+  const _SharedConfigurationSurface({
+    required this.kind,
+    required this.member,
+    required this.onDesignChanged,
+    required this.onFormsChanged,
+    required this.onIntegrationChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: context.bgSubtle.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: switch (kind) {
+        _ConsistencyKind.design => SharedProfileDesignEditor(
+          card: member.card,
+          onChanged: onDesignChanged,
+        ),
+        _ConsistencyKind.forms => SharedProfileFormsEditor(
+          cardId: member.card.id,
+          onFormsChanged: (forms) =>
+              onFormsChanged(_AdminViewState._adminFormsFromSmartForms(forms)),
+        ),
+        _ConsistencyKind.integrations => SharedProfileIntegrationsEditor(
+          calendarEnabled: member.card.calendarEnabled,
+          calendarUrl: member.card.calendarUrl,
+          onChanged: (enabled, url) => onIntegrationChanged(
+            provider: enabled ? _AdminViewState._providerFromUrl(url) : null,
+            url: enabled ? url : null,
+          ),
+        ),
+      },
+    );
+  }
+}
+
+class _SharedDesignEditor extends StatelessWidget {
+  final DigitalCardModel card;
+  final ValueChanged<DigitalCardModel> onChanged;
+
+  const _SharedDesignEditor({required this.card, required this.onChanged});
+
+  static const _colors = <Color>[
+    Color(0xFF0D0D0D),
+    AppColors.primary,
+    Color(0xFF6C4FE8),
+    Color(0xFF1A73E8),
+    Color(0xFF1A8C4E),
+    Color(0xFFD93025),
+    Color(0xFF00ACC1),
+    Color(0xFFF5A623),
+  ];
+
+  Color get _accentColor =>
+      card.backgroundColorEnd ?? card.bgColorEnd ?? card.primaryColor;
+
+  Color get _backgroundColor =>
+      card.bgColor ??
+      card.backgroundColorStart ??
+      (card.themeStyle == CardThemeStyle.black
+          ? const Color(0xFF111827)
+          : Colors.white);
+
+  Color get _backgroundEndColor =>
+      card.bgColorEnd ?? card.backgroundColorEnd ?? _accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SharedConfigHeader(
+          icon: Icons.palette_outlined,
+          title: 'Configuración de diseño compartido',
+          subtitle:
+              'Este diseño se aplica a todos los perfiles de la organización. Las configuraciones individuales quedan reemplazadas mientras esté activo.',
+        ),
+        const SizedBox(height: 22),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 980;
+            final controls = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SharedDesignSection(
+                  title: 'Diseño del perfil',
+                  subtitle:
+                      'Define si todos los perfiles públicos usan el diseño clásico o moderno.',
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _SharedOptionChip(
+                        label: 'Clásico',
+                        selected:
+                            card.profileDesign == CardProfileDesign.classic,
+                        onTap: () => onChanged(
+                          card.copyWith(
+                            profileDesign: CardProfileDesign.classic,
+                            layoutStyle:
+                                CardProfileDesign.classic.compatibleLayoutStyle,
+                          ),
+                        ),
+                      ),
+                      _SharedOptionChip(
+                        label: 'Moderno',
+                        selected:
+                            card.profileDesign == CardProfileDesign.modern,
+                        onTap: () => onChanged(
+                          card.copyWith(
+                            profileDesign: CardProfileDesign.modern,
+                            layoutStyle:
+                                CardProfileDesign.modern.compatibleLayoutStyle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _SharedDesignSection(
+                  title: 'Identidad visual',
+                  subtitle:
+                      'Color principal para acciones y color de acento para detalles visuales.',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sharedColorPicker(
+                        context,
+                        label: 'Color principal',
+                        selectedColor: card.primaryColor,
+                        onSelected: (color) =>
+                            onChanged(card.copyWith(primaryColor: color)),
+                      ),
+                      const SizedBox(height: 18),
+                      _sharedColorPicker(
+                        context,
+                        label: 'Color de acento',
+                        selectedColor: _accentColor,
+                        onSelected: (color) => onChanged(
+                          card.copyWith(
+                            backgroundColorEnd: color,
+                            bgColorEnd: color,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _SharedDesignSection(
+                  title: 'Fondo',
+                  subtitle:
+                      'Configura el fondo base que se utiliza cuando la portada no tiene imagen.',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sharedColorPicker(
+                        context,
+                        label: 'Color de fondo',
+                        selectedColor: _backgroundColor,
+                        onSelected: (color) => onChanged(
+                          card.copyWith(
+                            backgroundColorStart: color,
+                            bgColor: color,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _sharedColorPicker(
+                        context,
+                        label: 'Color final del fondo',
+                        selectedColor: _backgroundEndColor,
+                        onSelected: (color) => onChanged(
+                          card.copyWith(
+                            backgroundColorEnd: color,
+                            bgColorEnd: color,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _SharedDesignSection(
+                  title: 'Fondo y portada sin imagen',
+                  subtitle:
+                      'Selecciona el tono general para perfiles sin portada personalizada.',
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _SharedOptionChip(
+                        label: 'Blanco',
+                        selected: card.themeStyle == CardThemeStyle.white,
+                        onTap: () => onChanged(
+                          card.copyWith(
+                            themeStyle: CardThemeStyle.white,
+                            backgroundColorStart: Colors.white,
+                            backgroundColorEnd: _accentColor,
+                            bgColor: Colors.white,
+                            bgColorEnd: _accentColor,
+                          ),
+                        ),
+                      ),
+                      _SharedOptionChip(
+                        label: 'Negro',
+                        selected: card.themeStyle == CardThemeStyle.black,
+                        onTap: () => onChanged(
+                          card.copyWith(
+                            themeStyle: CardThemeStyle.black,
+                            backgroundColorStart: const Color(0xFF0D0D0D),
+                            backgroundColorEnd: _accentColor,
+                            bgColor: const Color(0xFF0D0D0D),
+                            bgColorEnd: _accentColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _SharedDesignSection(
+                  title: 'Efecto de fondo',
+                  subtitle:
+                      'Aplica un efecto visual compartido para el fondo público.',
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _SharedOptionChip(
+                        label: 'Sin efecto',
+                        selected: card.bgStyle == CardBgStyle.plain,
+                        onTap: () => onChanged(
+                          card.copyWith(bgStyle: CardBgStyle.plain),
+                        ),
+                      ),
+                      _SharedOptionChip(
+                        label: 'Gradiente',
+                        selected: card.bgStyle == CardBgStyle.gradient,
+                        onTap: () => onChanged(
+                          card.copyWith(bgStyle: CardBgStyle.gradient),
+                        ),
+                      ),
+                      _SharedOptionChip(
+                        label: 'Malla',
+                        selected: card.bgStyle == CardBgStyle.mesh,
+                        onTap: () =>
+                            onChanged(card.copyWith(bgStyle: CardBgStyle.mesh)),
+                      ),
+                      _SharedOptionChip(
+                        label: 'Rayas',
+                        selected: card.bgStyle == CardBgStyle.stripes,
+                        onTap: () => onChanged(
+                          card.copyWith(bgStyle: CardBgStyle.stripes),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+            final preview = _SharedDesignPreview(
+              card: card,
+              backgroundColor: _backgroundColor,
+              backgroundEndColor: _backgroundEndColor,
+            );
+            if (!wide) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [controls, const SizedBox(height: 24), preview],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: controls),
+                const SizedBox(width: 28),
+                Expanded(flex: 2, child: preview),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _sharedColorPicker(
+    BuildContext context, {
+    required String label,
+    required Color selectedColor,
+    required ValueChanged<Color> onSelected,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _colors.map((color) {
+            final selected = selectedColor == color;
+            return InkWell(
+              onTap: () => onSelected(color),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: selected ? context.textPrimary : context.borderColor,
+                    width: selected ? 3 : 1,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+class _SharedDesignSection extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  const _SharedDesignSection({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          subtitle,
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            color: context.textSecondary,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 14),
+        child,
+      ],
+    );
+  }
+}
+
+class _SharedDesignPreview extends StatelessWidget {
+  final DigitalCardModel card;
+  final Color backgroundColor;
+  final Color backgroundEndColor;
+
+  const _SharedDesignPreview({
+    required this.card,
+    required this.backgroundColor,
+    required this.backgroundEndColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = card.themeStyle == CardThemeStyle.black;
+    final fg = dark ? Colors.white : const Color(0xFF101828);
+    final muted = dark ? Colors.white70 : context.textSecondary;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vista compartida',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            height: 220,
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: _backgroundGradient(),
+              color: backgroundColor,
+            ),
+            child: Align(
+              alignment: card.profileDesign == CardProfileDesign.modern
+                  ? Alignment.bottomLeft
+                  : Alignment.center,
+              child: Container(
+                width: card.profileDesign == CardProfileDesign.modern
+                    ? double.infinity
+                    : 190,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: dark
+                      ? Colors.black.withValues(alpha: 0.72)
+                      : Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: card.primaryColor.withValues(alpha: 0.26),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment:
+                      card.profileDesign == CardProfileDesign.modern
+                      ? CrossAxisAlignment.start
+                      : CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: card.primaryColor.withValues(alpha: 0.12),
+                        border: Border.all(color: card.primaryColor),
+                      ),
+                      child: Icon(
+                        Icons.person_outline_rounded,
+                        color: card.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Perfil del equipo',
+                      textAlign: card.profileDesign == CardProfileDesign.modern
+                          ? TextAlign.left
+                          : TextAlign.center,
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: fg,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      card.profileDesign == CardProfileDesign.modern
+                          ? 'Diseño moderno'
+                          : 'Diseño clásico',
+                      textAlign: card.profileDesign == CardProfileDesign.modern
+                          ? TextAlign.left
+                          : TextAlign.center,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: muted,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      height: 8,
+                      width: 92,
+                      decoration: BoxDecoration(
+                        color: backgroundEndColor,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Gradient? _backgroundGradient() {
+    return switch (card.bgStyle) {
+      CardBgStyle.plain => null,
+      CardBgStyle.gradient => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [backgroundColor, backgroundEndColor],
+      ),
+      CardBgStyle.mesh => RadialGradient(
+        center: Alignment.topLeft,
+        radius: 1.45,
+        colors: [
+          backgroundEndColor.withValues(alpha: 0.9),
+          backgroundColor,
+          card.primaryColor.withValues(alpha: 0.48),
+        ],
+      ),
+      CardBgStyle.stripes => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          backgroundColor,
+          backgroundColor,
+          backgroundEndColor.withValues(alpha: 0.62),
+          backgroundEndColor.withValues(alpha: 0.62),
+        ],
+        stops: const [0, 0.48, 0.48, 1],
+      ),
+    };
+  }
+}
+
+class _SharedFormsEditor extends StatefulWidget {
+  final List<_AdminSmartForm> forms;
+  final ValueChanged<List<_AdminSmartForm>> onChanged;
+
+  const _SharedFormsEditor({required this.forms, required this.onChanged});
+
+  @override
+  State<_SharedFormsEditor> createState() => _SharedFormsEditorState();
+}
+
+class _SharedFormsEditorState extends State<_SharedFormsEditor> {
+  late List<_AdminSmartForm> _forms;
+
+  @override
+  void initState() {
+    super.initState();
+    _forms = _AdminViewState._cloneAdminForms(widget.forms);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SharedFormsEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.forms != widget.forms) {
+      _forms = _AdminViewState._cloneAdminForms(widget.forms);
+    }
+  }
+
+  void _emit() => widget.onChanged(_AdminViewState._cloneAdminForms(_forms));
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SharedConfigHeader(
+          icon: Icons.dynamic_form_outlined,
+          title: 'Configuración de formulario compartido',
+          subtitle:
+              'Estos formularios se usan en todos los perfiles de la organización mientras el formulario compartido esté activo.',
+        ),
+        const SizedBox(height: 12),
+        ..._forms.asMap().entries.map((entry) {
+          final index = entry.key;
+          final form = entry.value;
+          return Column(
+            children: [
+              _AdminFormRow(
+                form: form,
+                onToggle: (value) {
+                  setState(() => form.enabled = value);
+                  _emit();
+                },
+                onChanged: () {
+                  setState(() {});
+                  _emit();
+                },
+              ),
+              if (index < _forms.length - 1)
+                Divider(color: context.borderStrongSoft, height: 1),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _SharedIntegrationEditor extends StatefulWidget {
+  final _AdminCalProvider? provider;
+  final String? calendarUrl;
+  final Future<void> Function({
+    required _AdminCalProvider? provider,
+    required String? url,
+  })
+  onChanged;
+
+  const _SharedIntegrationEditor({
+    required this.provider,
+    required this.calendarUrl,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SharedIntegrationEditor> createState() =>
+      _SharedIntegrationEditorState();
+}
+
+class _SharedIntegrationEditorState extends State<_SharedIntegrationEditor> {
+  late TextEditingController _urlCtrl;
+  _AdminCalProvider? _provider;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _provider = widget.provider;
+    _urlCtrl = TextEditingController(text: widget.calendarUrl ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant _SharedIntegrationEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.provider != widget.provider) _provider = widget.provider;
+    if (oldWidget.calendarUrl != widget.calendarUrl) {
+      _urlCtrl.text = widget.calendarUrl ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await widget.onChanged(provider: _provider, url: _urlCtrl.text);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SharedConfigHeader(
+          icon: Icons.add_link_rounded,
+          title: 'Configuración de integración compartida',
+          subtitle:
+              'Esta conexión externa reemplaza las integraciones individuales de todos los miembros de la organización.',
+        ),
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: _AdminCalProvider.values.map((provider) {
+            return _SharedOptionChip(
+              label: provider.label,
+              selected: _provider == provider,
+              onTap: () => setState(() => _provider = provider),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _urlCtrl,
+          decoration: InputDecoration(
+            hintText: _provider?.hint ?? 'https://calendario.com/tu-enlace',
+            prefixIcon: const Icon(Icons.link_rounded),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            width: 180,
+            child: TapLoopButton(
+              label: _saving ? 'Guardando...' : 'Guardar',
+              onPressed: _saving ? null : _save,
+              height: 46,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SharedConfigHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _SharedConfigHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppColors.primary, size: 26),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.outfit(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: context.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  color: context.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SharedOptionChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SharedOptionChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.1)
+              : context.bgCard,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppColors.primary : context.borderStrongSoft,
+            width: 1.1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: selected ? AppColors.primary : context.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TeamProfilesPanel extends StatelessWidget {
+  final List<_AdminMember> members;
+  final int activeCount;
+  final int inactiveCount;
+  final void Function(_AdminMember) onView;
+  final void Function(_AdminMember) onEdit;
+  final void Function(_AdminMember, bool) onToggle;
+  final VoidCallback onInvite;
+
+  const _TeamProfilesPanel({
+    super.key,
+    required this.members,
+    required this.activeCount,
+    required this.inactiveCount,
+    required this.onView,
+    required this.onEdit,
+    required this.onToggle,
+    required this.onInvite,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(34, 34, 34, 34),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 960;
+              final title = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Perfiles del equipo',
+                    style: GoogleFonts.outfit(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      color: context.textPrimary,
+                      height: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Gestiona los perfiles digitales de tu equipo.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 16,
+                      color: context.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+              final actions = Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.end,
+                children: [
+                  _ProfileCounterPill(
+                    icon: Icons.badge_outlined,
+                    value: members.length,
+                    label: 'Perfiles',
+                    color: AppColors.primary,
+                  ),
+                  _ProfileCounterPill(
+                    icon: Icons.check_circle_outline_rounded,
+                    value: activeCount,
+                    label: 'Activos',
+                    color: AppColors.success,
+                  ),
+                  _ProfileCounterPill(
+                    icon: Icons.pause_circle_outline_rounded,
+                    value: inactiveCount,
+                    label: 'Inactivos',
+                    color: context.textSecondary,
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: onInvite,
+                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                    label: const Text('Invitar miembro'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      minimumSize: const Size(0, 56),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 22,
+                      ),
+                      textStyle: GoogleFonts.dmSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+              return compact
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [title, const SizedBox(height: 18), actions],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(child: title),
+                        actions,
+                      ],
+                    );
+            },
+          ),
+          const SizedBox(height: 26),
+          Divider(color: context.borderStrongSoft, height: 1),
+          const SizedBox(height: 18),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 1120),
+              child: Column(
+                children: [
+                  const _TeamProfilesHeader(),
+                  Divider(color: context.borderStrongSoft, height: 28),
+                  ...members.map(
+                    (member) => _TeamProfileRow(
+                      member: member,
+                      onView: () => onView(member),
+                      onEdit: () => onEdit(member),
+                      onToggle: (enabled) => onToggle(member, enabled),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileCounterPill extends StatelessWidget {
+  final IconData icon;
+  final int value;
+  final String label;
+  final Color color;
+
+  const _ProfileCounterPill({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 10),
+          Text(
+            '$value',
+            style: GoogleFonts.outfit(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: color,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamProfilesHeader extends StatelessWidget {
+  const _TeamProfilesHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = GoogleFonts.dmSans(
+      fontSize: 15,
+      fontWeight: FontWeight.w800,
+      color: context.textSecondary,
+    );
+    return Row(
+      children: [
+        SizedBox(width: 260, child: Text('Miembro', style: style)),
+        SizedBox(width: 250, child: Text('Cargo / Empresa', style: style)),
+        SizedBox(width: 220, child: Text('Perfil público', style: style)),
+        SizedBox(width: 150, child: Text('Estado', style: style)),
+        SizedBox(width: 180, child: Text('Progreso', style: style)),
+        SizedBox(width: 300, child: Text('Acciones', style: style)),
+      ],
+    );
+  }
+}
+
+class _TeamProfileRow extends StatelessWidget {
+  final _AdminMember member;
+  final VoidCallback onView;
+  final VoidCallback onEdit;
+  final ValueChanged<bool> onToggle;
+
+  const _TeamProfileRow({
+    required this.member,
+    required this.onView,
+    required this.onEdit,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _profileCompletion(member.card);
+    final isAdmin = member.isAdmin;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.borderStrongSoft)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 260,
+            child: Row(
+              children: [
+                _AdminMemberAvatar(member: member, size: 58),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    member.card.name.trim().isNotEmpty
+                        ? member.card.name
+                        : member.member.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 250,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  member.card.jobTitle.trim().isNotEmpty
+                      ? member.card.jobTitle
+                      : 'Sin cargo',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${member.card.company.trim().isEmpty ? member.member.name : member.card.company} · ${member.member.email}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 220,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    member.card.publicUrl.replaceFirst('https://', ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.open_in_new_rounded,
+                  size: 15,
+                  color: AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 150,
+            child: Row(
+              children: [
+                Icon(
+                  member.isActive
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.pause_circle_outline_rounded,
+                  size: 20,
+                  color: member.isActive
+                      ? AppColors.success
+                      : context.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  member.isActive ? 'Activo' : 'Inactivo',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: member.isActive
+                        ? AppColors.success
+                        : context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 180,
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: progress >= 0.8
+                        ? AppColors.success
+                        : context.textSecondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Completo ${(progress * 100).round()}%',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 300,
+            child: Row(
+              children: [
+                _ProfileActionButton(
+                  icon: Icons.visibility_outlined,
+                  label: 'Ver',
+                  onTap: onView,
+                ),
+                const SizedBox(width: 10),
+                _ProfileActionButton(
+                  icon: Icons.edit_outlined,
+                  label: 'Editar',
+                  onTap: onEdit,
+                ),
+                const SizedBox(width: 10),
+                Switch.adaptive(
+                  value: member.isActive,
+                  onChanged: isAdmin ? null : onToggle,
+                  activeTrackColor: AppColors.primary.withValues(alpha: 0.32),
+                  activeThumbColor: AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminMemberAvatar extends StatelessWidget {
+  final _AdminMember member;
+  final double size;
+
+  const _AdminMemberAvatar({required this.member, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = member.card.profilePhotoUrl ?? member.member.avatarUrl;
+    final hasImage = url?.trim().isNotEmpty == true;
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        shape: BoxShape.circle,
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+        image: hasImage
+            ? DecorationImage(image: NetworkImage(url!), fit: BoxFit.cover)
+            : null,
+      ),
+      child: hasImage
+          ? null
+          : Icon(
+              Icons.person_outline_rounded,
+              color: AppColors.primary,
+              size: size * 0.46,
+            ),
+    );
+  }
+}
+
+class _ProfileActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ProfileActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 19),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: context.textPrimary,
+        side: BorderSide(color: context.borderStrongSoft, width: 1.2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        minimumSize: const Size(0, 54),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+        textStyle: GoogleFonts.dmSans(
+          fontSize: 16,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+double _profileCompletion(DigitalCardModel card) {
+  final checks = [
+    card.name.trim().isNotEmpty,
+    card.jobTitle.trim().isNotEmpty,
+    card.contactItems.any((item) => item.value.trim().isNotEmpty),
+    card.socialLinks.any((link) => link.url.trim().isNotEmpty),
+    card.smartForms.any((form) => form.isActive),
+    card.calendarEnabled && (card.calendarUrl?.trim().isNotEmpty ?? false),
+  ];
+  return checks.where((value) => value).length / checks.length;
+}
 
 class _AdminSummaryStrip extends StatelessWidget {
   final int activeCount;
@@ -1484,7 +3560,7 @@ class _MemberCard extends StatelessWidget {
 
 class _EditMemberDialog extends StatefulWidget {
   final _AdminMember member;
-  final ValueChanged<_AdminMember> onSave;
+  final Future<void> Function(_AdminMember) onSave;
   final ScrollController? scrollController;
   const _EditMemberDialog({
     required this.member,
@@ -1511,6 +3587,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
   late List<_AdminSmartForm> _forms;
   _AdminCalProvider? _calProvider;
   late TextEditingController _calUrlCtrl;
+  bool _saving = false;
 
   static const _preferredColors = <Color>[
     Color(0xFF0D0D0D),
@@ -1627,19 +3704,35 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
     ];
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saving) return;
+    final calendarUrl = _calUrlCtrl.text.trim();
+    final enabledFormIds = _forms
+        .where((form) => form.enabled)
+        .map((form) => form.id)
+        .toList();
+    final nextCard = _card.copyWith(
+      enabledForms: enabledFormIds,
+      calendarEnabled: _calProvider != null && calendarUrl.isNotEmpty,
+      calendarUrl: calendarUrl,
+      contactItems: _card.contactItems,
+      socialLinks: _card.socialLinks,
+    );
     final updated = _AdminMember(
       member: widget.member.member,
-      card: _card,
+      card: nextCard,
       isActive: widget.member.isActive,
       forms: _forms,
       calendarProvider: _calProvider,
-      calendarioUrl: _calUrlCtrl.text.trim().isEmpty
-          ? null
-          : _calUrlCtrl.text.trim(),
+      calendarioUrl: calendarUrl.isEmpty ? null : calendarUrl,
     );
-    widget.onSave(updated);
-    Navigator.pop(context);
+    setState(() => _saving = true);
+    try {
+      await widget.onSave(updated);
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -1793,6 +3886,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
             onPrev: _prevStep,
             onNext: _nextStep,
             onSave: _save,
+            saving: _saving,
           ),
         ],
       );
@@ -1827,6 +3921,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
           onPrev: _prevStep,
           onNext: _nextStep,
           onSave: _save,
+          saving: _saving,
         ),
       ],
     );
@@ -2946,7 +5041,8 @@ class _AdminBottomStepNav extends StatelessWidget {
   final int totalSteps;
   final VoidCallback onPrev;
   final VoidCallback onNext;
-  final VoidCallback onSave;
+  final Future<void> Function() onSave;
+  final bool saving;
 
   const _AdminBottomStepNav({
     required this.currentIndex,
@@ -2954,6 +5050,7 @@ class _AdminBottomStepNav extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.onSave,
+    required this.saving,
   });
 
   @override
@@ -2977,8 +5074,18 @@ class _AdminBottomStepNav extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: TapLoopButton(
-                label: hasNext ? 'Siguiente paso' : 'Guardar cambios',
-                onPressed: hasNext ? onNext : onSave,
+                label: saving
+                    ? 'Guardando...'
+                    : hasNext
+                    ? 'Siguiente paso'
+                    : 'Guardar cambios',
+                onPressed: saving
+                    ? null
+                    : hasNext
+                    ? onNext
+                    : () {
+                        onSave();
+                      },
                 height: 44,
               ),
             ),

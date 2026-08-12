@@ -1,3 +1,7 @@
+-- Fix analytics tracking when PostgREST cannot choose record_card_visit.
+-- Symptom: PGRST203 "Could not choose the best candidate function".
+-- Cause: an old overload with p_campaign_id still exists in production.
+
 DROP FUNCTION IF EXISTS public.record_card_visit(
   uuid,
   text,
@@ -19,6 +23,18 @@ DROP FUNCTION IF EXISTS public.record_card_visit(
   text,
   text,
   uuid,
+  uuid,
+  uuid,
+  uuid
+);
+
+DROP FUNCTION IF EXISTS public.record_card_visit(
+  uuid,
+  text,
+  text,
+  text,
+  text,
+  character varying,
   uuid,
   uuid,
   uuid
@@ -79,7 +95,5 @@ GRANT EXECUTE ON FUNCTION public.record_card_visit(
   uuid,
   uuid
 ) TO anon, authenticated, service_role;
-
-DROP TABLE IF EXISTS public.link_stats;
 
 NOTIFY pgrst, 'reload schema';

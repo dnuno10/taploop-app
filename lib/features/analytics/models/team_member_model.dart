@@ -14,10 +14,12 @@ class TeamMemberModel {
   final String id;
   final List<String> cardIds;
   final String name;
+  final String email;
   final String jobTitle;
   final String role;
   final String? avatarUrl;
   final int taps;
+  final int qrScans;
   final int leads;
   final int profileViews;
   final int contactsSaved;
@@ -32,10 +34,12 @@ class TeamMemberModel {
     required this.id,
     this.cardIds = const [],
     required this.name,
+    this.email = '',
     required this.jobTitle,
     this.role = 'default',
     this.avatarUrl,
     required this.taps,
+    this.qrScans = 0,
     this.leads = 0,
     required this.profileViews,
     required this.contactsSaved,
@@ -52,10 +56,12 @@ class TeamMemberModel {
       id: json['id'] as String,
       cardIds: const [],
       name: json['name'] as String? ?? '',
+      email: json['email'] as String? ?? '',
       jobTitle: json['job_title'] as String? ?? '',
       role: json['role'] as String? ?? 'default',
       avatarUrl: json['photo_url'] as String?,
       taps: (json['taps'] as num?)?.toInt() ?? 0,
+      qrScans: (json['qr_scans'] as num?)?.toInt() ?? 0,
       leads: (json['leads'] as num?)?.toInt() ?? 0,
       profileViews: (json['profile_views'] as num?)?.toInt() ?? 0,
       contactsSaved: (json['contacts_saved'] as num?)?.toInt() ?? 0,

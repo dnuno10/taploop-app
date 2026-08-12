@@ -394,6 +394,7 @@ class CardRepository {
     bool includeOrganizationLogo = true,
     List<ContactItemModel> contactItems = const [],
     List<SocialLinkModel> socialLinks = const [],
+    List<SmartFormModel> smartForms = const [],
   }) async {
     final hydratedJson = Map<String, dynamic>.from(cardJson);
     final storedLogo = resolveCompanyLogoUrl(
@@ -423,6 +424,7 @@ class CardRepository {
       hydratedJson,
       contactItems: contactItems,
       socialLinks: socialLinks,
+      smartForms: smartForms,
     );
   }
 

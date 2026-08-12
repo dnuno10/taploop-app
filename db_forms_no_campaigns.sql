@@ -120,6 +120,19 @@ DROP FUNCTION IF EXISTS public.record_card_visit(
   text,
   text,
   text,
+  character varying,
+  uuid,
+  uuid,
+  uuid,
+  uuid
+);
+
+DROP FUNCTION IF EXISTS public.record_card_visit(
+  uuid,
+  text,
+  text,
+  text,
+  text,
   text,
   uuid,
   uuid,
@@ -213,6 +226,18 @@ BEGIN
   );
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.record_card_visit(
+  uuid,
+  text,
+  text,
+  text,
+  text,
+  text,
+  uuid,
+  uuid,
+  uuid
+) TO anon, authenticated, service_role;
 
 -- RPC sin campaña: envío de formulario por id.
 CREATE OR REPLACE FUNCTION public.submit_card_form(

@@ -5,6 +5,7 @@ import '../../../features/auth/models/user_model.dart';
 import '../../../features/card/models/digital_card_model.dart';
 import '../../../features/card/models/contact_item_model.dart';
 import '../../../features/card/models/social_link_model.dart';
+import '../../../features/card/models/smart_form_model.dart';
 
 class _ResolvedLinkReference {
   final String label;
@@ -36,7 +37,7 @@ class AdminRepository {
     ).subtract(const Duration(days: 6));
     final users = await _db
         .from('users')
-        .select('id, name, job_title, photo_url, role')
+        .select('id, name, email, job_title, photo_url, role')
         .eq('org_id', orgId)
         .eq('is_active', true);
 
@@ -69,6 +70,7 @@ class AdminRepository {
 
     final profileViewsByCard = <String, int>{};
     final tapsByCard = <String, int>{};
+    final qrScansByCard = <String, int>{};
     final leadsByCard = <String, int>{};
     final conversionsByCard = <String, int>{};
     final contactsSavedByCard = <String, int>{};
@@ -107,6 +109,9 @@ class AdminRepository {
         }
         if (source == 'nfc') {
           tapsByCard[cardId] = (tapsByCard[cardId] ?? 0) + 1;
+        }
+        if (source == 'qr') {
+          qrScansByCard[cardId] = (qrScansByCard[cardId] ?? 0) + 1;
         }
         if (source == 'downloaded_contact') {
           contactsSavedByCard[cardId] = (contactsSavedByCard[cardId] ?? 0) + 1;
@@ -167,10 +172,9 @@ class AdminRepository {
         final cardId = row['card_id'] as String?;
         if (cardId == null) continue;
         final converted = row['is_converted'] as bool? ?? false;
+        leadsByCard[cardId] = (leadsByCard[cardId] ?? 0) + 1;
         if (converted) {
           conversionsByCard[cardId] = (conversionsByCard[cardId] ?? 0) + 1;
-        } else {
-          leadsByCard[cardId] = (leadsByCard[cardId] ?? 0) + 1;
         }
       }
     }
@@ -181,6 +185,7 @@ class AdminRepository {
 
       int profileViews = 0;
       int taps = 0;
+      int qrScans = 0;
       int leads = 0;
       int conversions = 0;
       int contactsSaved = 0;
@@ -193,6 +198,7 @@ class AdminRepository {
       for (final cardId in userCardIds) {
         profileViews += profileViewsByCard[cardId] ?? 0;
         taps += tapsByCard[cardId] ?? 0;
+        qrScans += qrScansByCard[cardId] ?? 0;
         leads += leadsByCard[cardId] ?? 0;
         conversions += conversionsByCard[cardId] ?? 0;
         contactsSaved += contactsSavedByCard[cardId] ?? 0;
@@ -222,10 +228,12 @@ class AdminRepository {
         id: userId,
         cardIds: userCardIds,
         name: userJson['name'] as String? ?? '',
+        email: userJson['email'] as String? ?? '',
         jobTitle: userJson['job_title'] as String? ?? '',
         role: userJson['role'] as String? ?? 'default',
         avatarUrl: userJson['photo_url'] as String?,
         taps: taps,
+        qrScans: qrScans,
         leads: leads,
         profileViews: profileViews,
         contactsSaved: contactsSaved,
@@ -267,6 +275,11 @@ class AdminRepository {
         .select()
         .eq('card_id', cardId)
         .order('sort_order');
+    final forms = await _db
+        .from('smart_forms')
+        .select()
+        .eq('card_id', cardId)
+        .order('created_at');
 
     return CardRepository.buildCardModel(
       cardJson,
@@ -276,6 +289,9 @@ class AdminRepository {
       socialLinks: (socials as List)
           .map((e) => SocialLinkModel.fromJson(e as Map<String, dynamic>))
           .toList(),
+      smartForms: (forms as List)
+          .map((e) => SmartFormModel.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -284,6 +300,156 @@ class AdminRepository {
   static Future<void> updateUser(UserModel user) async {
     final payload = user.toJson()..remove('id');
     await _db.from('users').update(payload).eq('id', user.id);
+  }
+
+  static Future<void> saveAdminMember({
+    required DigitalCardModel card,
+    required List<ContactItemModel> contacts,
+    required List<SocialLinkModel> socialLinks,
+    required List<SmartFormModel> smartForms,
+  }) async {
+    await updateCard(card);
+    await replaceContactItems(cardId: card.id, items: contacts);
+    await replaceSocialLinks(cardId: card.id, links: socialLinks);
+    await replaceSmartForms(cardId: card.id, forms: smartForms);
+  }
+
+  static Future<void> replaceContactItems({
+    required String cardId,
+    required List<ContactItemModel> items,
+  }) async {
+    await _db.from('contact_items').delete().eq('card_id', cardId);
+    final payload = items
+        .asMap()
+        .entries
+        .where((entry) => entry.value.value.trim().isNotEmpty)
+        .map((entry) {
+          return entry.value
+              .copyWith(sortOrder: entry.key)
+              .toJson(cardId: cardId);
+        })
+        .toList();
+    if (payload.isNotEmpty) {
+      await _db.from('contact_items').insert(payload);
+    }
+  }
+
+  static Future<void> replaceSocialLinks({
+    required String cardId,
+    required List<SocialLinkModel> links,
+  }) async {
+    await _db.from('social_links').delete().eq('card_id', cardId);
+    final payload = links
+        .asMap()
+        .entries
+        .where((entry) => entry.value.url.trim().isNotEmpty)
+        .map((entry) {
+          return entry.value
+              .copyWith(sortOrder: entry.key)
+              .toJson(cardId: cardId);
+        })
+        .toList();
+    if (payload.isNotEmpty) {
+      await _db.from('social_links').insert(payload);
+    }
+  }
+
+  static Future<void> replaceSmartForms({
+    required String cardId,
+    required List<SmartFormModel> forms,
+  }) async {
+    final existing = await CardRepository.fetchSmartForms(cardId);
+    for (final form in existing) {
+      await CardRepository.deleteSmartForm(form.id);
+    }
+    final payload = forms
+        .where((form) => form.name.trim().isNotEmpty)
+        .map((form) => form.toJson(cardId: cardId))
+        .toList();
+    if (payload.isNotEmpty) {
+      await _db.from('smart_forms').insert(payload);
+    }
+  }
+
+  static Future<void> updateOrgConsistencySettings({
+    required String orgId,
+    bool? sharedDesignEnabled,
+    bool? sharedFormsEnabled,
+    bool? sharedIntegrationsEnabled,
+  }) async {
+    final payload = <String, dynamic>{
+      if (sharedDesignEnabled != null)
+        'shared_design_enabled': sharedDesignEnabled,
+      if (sharedFormsEnabled != null)
+        'shared_forms_enabled': sharedFormsEnabled,
+      if (sharedIntegrationsEnabled != null)
+        'shared_integrations_enabled': sharedIntegrationsEnabled,
+    };
+    if (payload.isEmpty) return;
+    await _db.from('organizations').update(payload).eq('id', orgId);
+  }
+
+  static Future<void> applySharedDesign({
+    required DigitalCardModel sourceCard,
+    required List<String> targetCardIds,
+  }) async {
+    final cardIds = _normalizedCardIds(targetCardIds);
+    if (cardIds.isEmpty) return;
+    await _db
+        .from('digital_cards')
+        .update({
+          'theme_style': sourceCard.themeStyle.name,
+          'layout_style': sourceCard.profileDesign.compatibleLayoutStyle.name,
+          'profile_design': sourceCard.profileDesign.name,
+          'primary_color': sourceCard.primaryColor.toARGB32(),
+          'background_color_start': sourceCard.backgroundColorStart?.toARGB32(),
+          'background_color_end': sourceCard.backgroundColorEnd?.toARGB32(),
+          'bg_style': sourceCard.bgStyle.name,
+          'bg_color': sourceCard.bgColor?.toARGB32(),
+          'bg_color_end': sourceCard.bgColorEnd?.toARGB32(),
+          'show_verified_badge': sourceCard.showVerifiedBadge,
+        })
+        .inFilter('id', cardIds);
+  }
+
+  static Future<void> applySharedForms({
+    required String sourceCardId,
+    required List<String> targetCardIds,
+  }) async {
+    final cardIds = _normalizedCardIds(targetCardIds);
+    if (cardIds.isEmpty) return;
+    final sourceForms = await CardRepository.fetchSmartForms(sourceCardId);
+    for (final cardId in cardIds) {
+      if (cardId == sourceCardId) continue;
+      await replaceSmartForms(cardId: cardId, forms: sourceForms);
+    }
+  }
+
+  static Future<void> applySharedIntegrations({
+    required DigitalCardModel sourceCard,
+    required List<String> targetCardIds,
+  }) async {
+    final cardIds = _normalizedCardIds(targetCardIds);
+    if (cardIds.isEmpty) return;
+    await _db
+        .from('digital_cards')
+        .update({
+          'calendar_enabled':
+              sourceCard.calendarEnabled &&
+              (sourceCard.calendarUrl?.trim().isNotEmpty ?? false),
+          'calendar_url': sourceCard.calendarUrl?.trim().isEmpty == true
+              ? null
+              : sourceCard.calendarUrl,
+        })
+        .inFilter('id', cardIds);
+  }
+
+  static List<String> _normalizedCardIds(List<String> cardIds) {
+    return cardIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
   }
 
   static String _eventLinkKey({

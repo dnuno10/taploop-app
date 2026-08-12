@@ -10,14 +10,17 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/data/app_state.dart';
+import '../../../core/data/repositories/admin_repository.dart';
 import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/empty_data_state.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../../analytics/models/analytics_summary_model.dart';
+import '../../analytics/models/team_member_model.dart';
 import '../../analytics/widgets/visit_event_tile.dart';
 import '../../analytics/widgets/link_stats_bar.dart';
+import '../../analytics/widgets/team_member_filter_dropdown.dart';
 import '../../analytics/widgets/weekly_visits_chart.dart';
 
 Color _analyticsPanelSurfaceColor(BuildContext context) => context.bgCard;
@@ -42,12 +45,15 @@ class AnalyticsDashboardView extends StatefulWidget {
 
 class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
   AnalyticsSummaryModel? _analytics;
+  List<TeamMemberModel> _members = [];
   bool _loading = true;
   late DateTimeRange _range;
   int _loadVersion = 0;
   String? _loadedCardId;
+  String? _loadedOrgId;
+  String? _selectedMemberId;
   MetricsRealtimeSubscription? _metricsRealtime;
-  String? _realtimeCardId;
+  String? _realtimeMetricsKey;
 
   @override
   void initState() {
@@ -63,47 +69,78 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
   }
 
   void _onAppStateChanged() {
+    final orgId = appState.currentUser?.orgId;
     final cardId = appState.currentCard?.id;
     _bindRealtime();
-    if (cardId == null || cardId == _loadedCardId) return;
+    if (orgId == _loadedOrgId && cardId == _loadedCardId) return;
     if (!mounted) return;
     setState(() => _loading = true);
     _load();
   }
 
   void _bindRealtime() {
+    final orgId = appState.currentUser?.orgId;
     final cardId = appState.currentCard?.id;
-    if (cardId == _realtimeCardId) return;
+    final key = orgId != null && orgId.isNotEmpty
+        ? 'org:$orgId'
+        : 'card:$cardId';
+    if (key == _realtimeMetricsKey) return;
     _metricsRealtime?.close();
-    _realtimeCardId = cardId;
-    if (cardId == null || cardId.isEmpty) return;
-    _metricsRealtime = MetricsRealtimeSubscription.forCard(
-      cardId: cardId,
-      onRefresh: () {
-        if (!mounted) return;
-        _load();
-      },
-    );
+    _realtimeMetricsKey = key;
+    if (orgId != null && orgId.isNotEmpty) {
+      _metricsRealtime = MetricsRealtimeSubscription.forOrganization(
+        orgId: orgId,
+        onRefresh: () {
+          if (!mounted) return;
+          _load();
+        },
+      );
+    } else if (cardId != null && cardId.isNotEmpty) {
+      _metricsRealtime = MetricsRealtimeSubscription.forCard(
+        cardId: cardId,
+        onRefresh: () {
+          if (!mounted) return;
+          _load();
+        },
+      );
+    }
   }
 
   Future<void> _load() async {
     final cardId = appState.currentCard?.id;
+    final orgId = appState.currentUser?.orgId;
     final range = _range;
     final loadVersion = ++_loadVersion;
-    if (cardId == null) {
+    if (cardId == null && orgId == null) {
       _loadedCardId = null;
+      _loadedOrgId = null;
       if (mounted) setState(() => _loading = false);
       return;
     }
     try {
-      final data = await AnalyticsRepository.fetchSummary(
-        cardId,
+      final members = orgId == null
+          ? <TeamMemberModel>[]
+          : await AdminRepository.fetchTeamMembers(orgId);
+      final selectedMemberId = _resolveSelectedMemberId(
+        members: members,
+        currentSelectedId: _selectedMemberId,
+      );
+      final cardIds = _cardIdsForSelection(
+        members: members,
+        selectedMemberId: selectedMemberId,
+        fallbackCardId: cardId,
+      );
+      final data = await AnalyticsRepository.fetchSummaryForCards(
+        cardIds,
         from: range.start,
         to: range.end,
       );
       if (!mounted || loadVersion != _loadVersion) return;
       setState(() {
         _loadedCardId = cardId;
+        _loadedOrgId = orgId;
+        _members = members;
+        _selectedMemberId = selectedMemberId;
         _analytics = data;
         _loading = false;
       });
@@ -111,10 +148,38 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
       if (!mounted || loadVersion != _loadVersion) return;
       setState(() {
         _loadedCardId = cardId;
+        _loadedOrgId = orgId;
         _analytics = null;
         _loading = false;
       });
     }
+  }
+
+  String? _resolveSelectedMemberId({
+    required List<TeamMemberModel> members,
+    required String? currentSelectedId,
+  }) {
+    if (currentSelectedId == null || members.isEmpty) return null;
+    return members.any((member) => member.id == currentSelectedId)
+        ? currentSelectedId
+        : null;
+  }
+
+  List<String> _cardIdsForSelection({
+    required List<TeamMemberModel> members,
+    required String? selectedMemberId,
+    required String? fallbackCardId,
+  }) {
+    final selectedMembers = selectedMemberId == null
+        ? members
+        : members.where((member) => member.id == selectedMemberId).toList();
+    final cardIds = selectedMembers
+        .expand((member) => member.cardIds)
+        .where((id) => id.trim().isNotEmpty)
+        .toSet()
+        .toList();
+    if (cardIds.isNotEmpty) return cardIds;
+    return fallbackCardId == null ? const [] : [fallbackCardId];
   }
 
   Future<void> _pickRange() async {
@@ -333,7 +398,9 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
     final analytics = _analytics;
     final isDesktop = Responsive.isDesktop(context);
     final isMobile = Responsive.isMobile(context);
-    final hasLinkedCard = appState.currentCard != null;
+    final hasLinkedCard =
+        appState.currentCard != null ||
+        _members.any((member) => member.cardIds.isNotEmpty);
     final titleBlock = ConstrainedBox(
       constraints: BoxConstraints(
         minWidth: isDesktop ? 320 : 240,
@@ -353,7 +420,7 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Mide el rendimiento general de tu tarjeta digital.',
+            'Mide el rendimiento general de tu tarjeta digital y tu equipo.',
             style: GoogleFonts.dmSans(
               fontSize: 15,
               color: context.textSecondary,
@@ -367,6 +434,18 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
       runSpacing: 12,
       alignment: WrapAlignment.end,
       children: [
+        TeamMemberFilterDropdown(
+          members: _members,
+          selectedMemberId: _selectedMemberId,
+          onChanged: (memberId) {
+            setState(() {
+              _selectedMemberId = memberId;
+              _analytics = null;
+              _loading = true;
+            });
+            _load();
+          },
+        ),
         _PeriodChip(label: 'Todo', onTap: _pickRange),
         _ExportActionButton(
           label: 'CSV',

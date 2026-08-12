@@ -61,6 +61,9 @@ class _EditCardViewState extends State<EditCardView>
   bool _suppressTextSync = false;
   String? _organizationName;
   bool _syncingOrganizationCompany = false;
+  bool _sharedDesignLocked = false;
+  bool _sharedFormsLocked = false;
+  bool _sharedIntegrationsLocked = false;
 
   @override
   void initState() {
@@ -162,20 +165,39 @@ class _EditCardViewState extends State<EditCardView>
     final orgId = appState.currentUser?.orgId;
     if (orgId == null || orgId.isEmpty) {
       if (!mounted) return;
-      setState(() => _organizationName = null);
+      setState(() {
+        _organizationName = null;
+        _sharedDesignLocked = false;
+        _sharedFormsLocked = false;
+        _sharedIntegrationsLocked = false;
+      });
       return;
     }
 
     try {
       final rows = await SupabaseService.client
           .from('organizations')
-          .select('name')
+          .select(
+            'name, shared_design_enabled, shared_forms_enabled, shared_integrations_enabled',
+          )
           .eq('id', orgId)
           .limit(1);
-      final orgName = (rows as List).isNotEmpty
-          ? (rows.first['name'] as String?)?.trim()
-          : null;
-      if (!mounted || orgName == null || orgName.isEmpty) return;
+      final orgRows = rows as List;
+      final org = orgRows.isNotEmpty ? orgRows.first : null;
+      final orgName = (org?['name'] as String?)?.trim();
+      final sharedDesign = org?['shared_design_enabled'] as bool? ?? false;
+      final sharedForms = org?['shared_forms_enabled'] as bool? ?? false;
+      final sharedIntegrations =
+          org?['shared_integrations_enabled'] as bool? ?? false;
+      if (!mounted) return;
+      if (orgName == null || orgName.isEmpty) {
+        setState(() {
+          _sharedDesignLocked = sharedDesign;
+          _sharedFormsLocked = sharedForms;
+          _sharedIntegrationsLocked = sharedIntegrations;
+        });
+        return;
+      }
 
       final shouldPersistCompany =
           _card.id.isNotEmpty && _card.company.trim() != orgName;
@@ -183,6 +205,9 @@ class _EditCardViewState extends State<EditCardView>
       _syncControllers(company: orgName);
       setState(() {
         _organizationName = orgName;
+        _sharedDesignLocked = sharedDesign;
+        _sharedFormsLocked = sharedForms;
+        _sharedIntegrationsLocked = sharedIntegrations;
         _card = _card.copyWith(company: orgName);
         _unsaved = previousUnsaved;
       });
@@ -291,8 +316,8 @@ class _EditCardViewState extends State<EditCardView>
       hasVisibleContact,
       hasVisibleSocial,
       true,
-      _hasCompletedForm,
-      hasCalendar,
+      _sharedFormsLocked || _hasCompletedForm,
+      _sharedIntegrationsLocked || hasCalendar,
     ];
   }
 
@@ -1003,35 +1028,193 @@ class _EditCardViewState extends State<EditCardView>
       onAdd: _showAddSocial,
       onEdit: _showEditSocial,
     ),
-    _DesignTab(
-      card: _card,
-      onChanged: (c) => setState(() {
-        _card = c;
-        _unsaved = true;
-      }),
-    ),
-    _FormulariosTab(
-      cardId: _card.id,
-      onCompletionChanged: (hasCompletedForm) {
-        if (_hasCompletedForm == hasCompletedForm) return;
-        setState(() => _hasCompletedForm = hasCompletedForm);
-      },
-      onFormsChanged: (forms) {
-        setState(() => _card = _card.copyWith(smartForms: forms));
-      },
-    ),
-    _CalendarioTab(
-      calendarEnabled: _card.calendarEnabled,
-      calendarUrl: _card.calendarUrl,
-      onChanged: (enabled, url) => setState(() {
-        _card = _card.copyWith(
-          calendarEnabled: enabled,
-          calendarUrl: url.isEmpty ? null : url,
-        );
-        _unsaved = true;
-      }),
-    ),
+    if (_sharedDesignLocked)
+      const _OrganizationSharedLockTab(
+        icon: Icons.palette_outlined,
+        title: 'Diseño compartido activo',
+        message:
+            'La configuración de diseño se gestiona desde Integraciones para toda la organización.',
+      )
+    else
+      _DesignTab(
+        card: _card,
+        onChanged: (c) => setState(() {
+          _card = c;
+          _unsaved = true;
+        }),
+      ),
+    if (_sharedFormsLocked)
+      const _OrganizationSharedLockTab(
+        icon: Icons.assignment_outlined,
+        title: 'Formulario compartido activo',
+        message:
+            'Los formularios se gestionan desde Integraciones y se aplican a todos los miembros de la organización.',
+      )
+    else
+      _FormulariosTab(
+        cardId: _card.id,
+        onCompletionChanged: (hasCompletedForm) {
+          if (_hasCompletedForm == hasCompletedForm) return;
+          setState(() => _hasCompletedForm = hasCompletedForm);
+        },
+        onFormsChanged: (forms) {
+          setState(() => _card = _card.copyWith(smartForms: forms));
+        },
+      ),
+    if (_sharedIntegrationsLocked)
+      const _OrganizationSharedLockTab(
+        icon: Icons.hub_outlined,
+        title: 'Integración compartida activa',
+        message:
+            'Las integraciones se gestionan desde Integraciones y reemplazan la configuración individual.',
+      )
+    else
+      _CalendarioTab(
+        calendarEnabled: _card.calendarEnabled,
+        calendarUrl: _card.calendarUrl,
+        onChanged: (enabled, url) => setState(() {
+          _card = _card.copyWith(
+            calendarEnabled: enabled,
+            calendarUrl: url.isEmpty ? null : url,
+          );
+          _unsaved = true;
+        }),
+      ),
   ];
+}
+
+class SharedProfileDesignEditor extends StatelessWidget {
+  final DigitalCardModel card;
+  final ValueChanged<DigitalCardModel> onChanged;
+
+  const SharedProfileDesignEditor({
+    super.key,
+    required this.card,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _DesignTab(card: card, onChanged: onChanged, embedded: true);
+  }
+}
+
+class SharedProfileFormsEditor extends StatelessWidget {
+  final String cardId;
+  final ValueChanged<List<SmartFormModel>> onFormsChanged;
+
+  const SharedProfileFormsEditor({
+    super.key,
+    required this.cardId,
+    required this.onFormsChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _FormulariosTab(
+      cardId: cardId,
+      embedded: true,
+      onCompletionChanged: (_) {},
+      onFormsChanged: onFormsChanged,
+    );
+  }
+}
+
+class SharedProfileIntegrationsEditor extends StatelessWidget {
+  final bool calendarEnabled;
+  final String? calendarUrl;
+  final void Function(bool enabled, String url) onChanged;
+
+  const SharedProfileIntegrationsEditor({
+    super.key,
+    required this.calendarEnabled,
+    required this.calendarUrl,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _CalendarioTab(
+      calendarEnabled: calendarEnabled,
+      calendarUrl: calendarUrl,
+      embedded: true,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _OrganizationSharedLockTab extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+
+  const _OrganizationSharedLockTab({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.24),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: AppColors.primary, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        message,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          height: 1.45,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EditStepData {
@@ -3286,7 +3469,12 @@ Color _socialPlatformColor(SocialPlatform platform) {
 class _DesignTab extends StatelessWidget {
   final DigitalCardModel card;
   final ValueChanged<DigitalCardModel> onChanged;
-  const _DesignTab({required this.card, required this.onChanged});
+  final bool embedded;
+  const _DesignTab({
+    required this.card,
+    required this.onChanged,
+    this.embedded = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3472,6 +3660,10 @@ class _DesignTab extends StatelessWidget {
         ),
       ),
     );
+
+    if (embedded) {
+      return settingsContent;
+    }
 
     if (isDesktop) {
       return SingleChildScrollView(
@@ -5597,10 +5789,12 @@ class _FormulariosTab extends StatefulWidget {
   final String cardId;
   final ValueChanged<bool> onCompletionChanged;
   final ValueChanged<List<SmartFormModel>> onFormsChanged;
+  final bool embedded;
   const _FormulariosTab({
     required this.cardId,
     required this.onCompletionChanged,
     required this.onFormsChanged,
+    this.embedded = false,
   });
 
   @override
@@ -6056,107 +6250,109 @@ class _FormulariosTabState extends State<_FormulariosTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Formularios de captura',
-                          style: GoogleFonts.outfit(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: context.textPrimary,
-                          ),
+    final content = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Formularios de captura',
+                        style: GoogleFonts.outfit(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Crea y gestiona formularios para capturar prospectos desde tu perfil.',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 14,
-                            color: context.textSecondary,
-                          ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Crea y gestiona formularios para capturar prospectos desde tu perfil.',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          color: context.textSecondary,
                         ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Expanded(
-                    child: _EditorInlineMetric(
-                      icon: Icons.dynamic_form_outlined,
-                      value: '${_forms.length}',
-                      label: 'Formularios',
-                    ),
-                  ),
-                  const SizedBox(width: 34),
-                  Expanded(
-                    child: _EditorInlineMetric(
-                      icon: Icons.check_circle_outline_rounded,
-                      value: '${_forms.where((form) => form.isActive).length}',
-                      label: 'Activos',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              TapLoopButton(
-                label: 'Crear formulario',
-                height: 54,
-                borderRadius: 999,
-                icon: const Icon(Icons.add_rounded, size: 18),
-                onPressed: _createForm,
-              ),
-              const SizedBox(height: 28),
-              Divider(color: context.borderStrongSoft, height: 1),
-              const SizedBox(height: 24),
-              if (_forms.isEmpty)
-                _EmptyState(
-                  message: 'No hay formularios creados',
-                  hint: 'Crea uno seleccionando los campos incluidos.',
-                )
-              else
-                ..._forms.map(
-                  (f) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _DbSmartFormCard(form: f, onChanged: _loadForms),
+                      ),
+                    ],
                   ),
                 ),
-              const SizedBox(height: 28),
-              Align(
-                alignment: Alignment.centerRight,
-                child: SizedBox(
-                  width: 210,
-                  child: TapLoopButton(
-                    label: 'Guardar cambios',
-                    variant: TapLoopButtonVariant.outline,
-                    height: 54,
-                    borderRadius: 999,
-                    icon: const Icon(
-                      Icons.save_outlined,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                    onPressed: _loadForms,
+              ],
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Expanded(
+                  child: _EditorInlineMetric(
+                    icon: Icons.dynamic_form_outlined,
+                    value: '${_forms.length}',
+                    label: 'Formularios',
                   ),
                 ),
+                const SizedBox(width: 34),
+                Expanded(
+                  child: _EditorInlineMetric(
+                    icon: Icons.check_circle_outline_rounded,
+                    value: '${_forms.where((form) => form.isActive).length}',
+                    label: 'Activos',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            TapLoopButton(
+              label: 'Crear formulario',
+              height: 54,
+              borderRadius: 999,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              onPressed: _createForm,
+            ),
+            const SizedBox(height: 28),
+            Divider(color: context.borderStrongSoft, height: 1),
+            const SizedBox(height: 24),
+            if (_forms.isEmpty)
+              _EmptyState(
+                message: 'No hay formularios creados',
+                hint: 'Crea uno seleccionando los campos incluidos.',
+              )
+            else
+              ..._forms.map(
+                (f) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _DbSmartFormCard(form: f, onChanged: _loadForms),
+                ),
               ),
-            ],
-          ),
+            const SizedBox(height: 28),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 210,
+                child: TapLoopButton(
+                  label: 'Guardar cambios',
+                  variant: TapLoopButtonVariant.outline,
+                  height: 54,
+                  borderRadius: 999,
+                  icon: const Icon(
+                    Icons.save_outlined,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  onPressed: _loadForms,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+    if (widget.embedded) return content;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
+      child: content,
     );
   }
 }
@@ -6498,11 +6694,13 @@ class _CalendarioTab extends StatefulWidget {
   final bool calendarEnabled;
   final String? calendarUrl;
   final void Function(bool enabled, String url) onChanged;
+  final bool embedded;
 
   const _CalendarioTab({
     required this.calendarEnabled,
     required this.calendarUrl,
     required this.onChanged,
+    this.embedded = false,
   });
 
   @override
@@ -6762,108 +6960,109 @@ class _CalendarioTabState extends State<_CalendarioTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Integraciones',
-                style: GoogleFonts.outfit(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: context.textPrimary,
-                ),
+    final content = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Integraciones',
+              style: GoogleFonts.outfit(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: context.textPrimary,
               ),
-              const SizedBox(height: 6),
-              Text(
-                'Conecta herramientas externas a tu perfil.',
-                style: GoogleFonts.dmSans(
-                  fontSize: 14,
-                  color: context.textSecondary,
-                ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Conecta herramientas externas a tu perfil.',
+              style: GoogleFonts.dmSans(
+                fontSize: 14,
+                color: context.textSecondary,
               ),
-              const SizedBox(height: 28),
-              Row(
-                children: [
-                  Expanded(
-                    child: _EditorInlineMetric(
-                      icon: Icons.hub_outlined,
-                      value: '1',
-                      label: 'Integraciones',
-                    ),
-                  ),
-                  const SizedBox(width: 34),
-                  Expanded(
-                    child: _EditorInlineMetric(
-                      icon: Icons.check_circle_outline_rounded,
-                      value: _enabled ? '1' : '0',
-                      label: 'Activas',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              TapLoopButton(
-                label: 'Agregar integración',
-                height: 54,
-                borderRadius: 999,
-                icon: const Icon(Icons.add_link_rounded, size: 18),
-                onPressed: _showIntegrationDialog,
-              ),
-              const SizedBox(height: 28),
-              Divider(color: context.borderStrongSoft, height: 1),
-              const SizedBox(height: 24),
-              if (_controllers.values.every((ctrl) => ctrl.text.trim().isEmpty))
-                _EmptyState(
-                  message: 'No hay integraciones configuradas',
-                  hint:
-                      'Agrega una agenda o herramienta externa para mostrarla en tu perfil.',
-                )
-              else
-                ...CalendarProviderType.values
-                    .where(
-                      (provider) =>
-                          _controllers[provider]!.text.trim().isNotEmpty,
-                    )
-                    .map((provider) {
-                      final ctrl = _controllers[provider]!;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _IntegrationRow(
-                          provider: provider,
-                          url: ctrl.text.trim(),
-                          onEdit: () =>
-                              _showIntegrationDialog(initial: provider),
-                        ),
-                      );
-                    }),
-              const SizedBox(height: 34),
-              Align(
-                alignment: Alignment.centerRight,
-                child: SizedBox(
-                  width: 210,
-                  child: TapLoopButton(
-                    label: 'Guardar cambios',
-                    variant: TapLoopButtonVariant.outline,
-                    height: 54,
-                    borderRadius: 999,
-                    icon: const Icon(
-                      Icons.save_outlined,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                    onPressed: _emitChanges,
+            ),
+            const SizedBox(height: 28),
+            Row(
+              children: [
+                Expanded(
+                  child: _EditorInlineMetric(
+                    icon: Icons.hub_outlined,
+                    value: '1',
+                    label: 'Integraciones',
                   ),
                 ),
+                const SizedBox(width: 34),
+                Expanded(
+                  child: _EditorInlineMetric(
+                    icon: Icons.check_circle_outline_rounded,
+                    value: _enabled ? '1' : '0',
+                    label: 'Activas',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            TapLoopButton(
+              label: 'Agregar integración',
+              height: 54,
+              borderRadius: 999,
+              icon: const Icon(Icons.add_link_rounded, size: 18),
+              onPressed: _showIntegrationDialog,
+            ),
+            const SizedBox(height: 28),
+            Divider(color: context.borderStrongSoft, height: 1),
+            const SizedBox(height: 24),
+            if (_controllers.values.every((ctrl) => ctrl.text.trim().isEmpty))
+              _EmptyState(
+                message: 'No hay integraciones configuradas',
+                hint:
+                    'Agrega una agenda o herramienta externa para mostrarla en tu perfil.',
+              )
+            else
+              ...CalendarProviderType.values
+                  .where(
+                    (provider) =>
+                        _controllers[provider]!.text.trim().isNotEmpty,
+                  )
+                  .map((provider) {
+                    final ctrl = _controllers[provider]!;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _IntegrationRow(
+                        provider: provider,
+                        url: ctrl.text.trim(),
+                        onEdit: () => _showIntegrationDialog(initial: provider),
+                      ),
+                    );
+                  }),
+            const SizedBox(height: 34),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 210,
+                child: TapLoopButton(
+                  label: 'Guardar cambios',
+                  variant: TapLoopButtonVariant.outline,
+                  height: 54,
+                  borderRadius: 999,
+                  icon: const Icon(
+                    Icons.save_outlined,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  onPressed: _emitChanges,
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+    );
+    if (widget.embedded) return content;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 30, 28, 48),
+      child: content,
     );
   }
 }

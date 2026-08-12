@@ -1,10 +1,12 @@
+// ignore_for_file: unused_element
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/admin_repository.dart';
-import '../../../core/data/repositories/lead_repository.dart';
+import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
@@ -12,6 +14,8 @@ import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/empty_data_state.dart';
 import '../models/lead_model.dart';
 import '../models/team_member_model.dart';
+import '../models/visit_event_model.dart';
+import '../widgets/team_member_filter_dropdown.dart';
 
 Color _teamAnalyticsSurfaceColor(BuildContext context) =>
     context.bgSubtle.withValues(alpha: 0.5);
@@ -27,12 +31,10 @@ class TeamPerformanceView extends StatefulWidget {
 
 class _TeamPerformanceViewState extends State<TeamPerformanceView> {
   List<TeamMemberModel> _members = [];
-  Map<String, List<LeadModel>> _memberLeads = {};
+  List<_TeamActivityItem> _teamActivity = [];
   bool _loading = true;
   String? _loadedOrgId;
   String? _selectedMemberId;
-  final TextEditingController _searchCtrl = TextEditingController();
-  String _memberSearch = '';
   MetricsRealtimeSubscription? _metricsRealtime;
   String? _realtimeOrgId;
 
@@ -48,7 +50,6 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
   void dispose() {
     appState.removeListener(_onAppStateChanged);
     _metricsRealtime?.close();
-    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -89,25 +90,36 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
           .expand((member) => member.cardIds)
           .toSet()
           .toList();
-      final leadsByCard = await LeadRepository.fetchLeadsForCards(allCardIds);
-      final leadsByMember = <String, List<LeadModel>>{};
+      final recentEvents = await AnalyticsRepository.fetchRecentEventsForCards(
+        allCardIds,
+        limit: 80,
+      );
+      final memberByCardId = <String, TeamMemberModel>{};
       for (final member in members) {
-        final memberLeads = <LeadModel>[];
         for (final cardId in member.cardIds) {
-          memberLeads.addAll(leadsByCard[cardId] ?? const []);
+          memberByCardId[cardId] = member;
         }
-        memberLeads.sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
-        leadsByMember[member.id] = memberLeads;
       }
       if (!mounted) return;
       setState(() {
         _loadedOrgId = orgId;
-        _members = members..sort((a, b) => b.leads.compareTo(a.leads));
-        _memberLeads = leadsByMember;
+        _members = members
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
         _selectedMemberId = _resolveSelectedMemberId(
           sortedMembers: _members,
           currentSelectedId: _selectedMemberId,
         );
+        _teamActivity = recentEvents
+            .map((event) {
+              final cardId = event.cardId;
+              final member = cardId == null ? null : memberByCardId[cardId];
+              if (member == null) return null;
+              return _TeamActivityItem(member: member, event: event);
+            })
+            .whereType<_TeamActivityItem>()
+            .toList();
         _loading = false;
       });
     } catch (_) {
@@ -123,20 +135,26 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
     required List<TeamMemberModel> sortedMembers,
     required String? currentSelectedId,
   }) {
-    if (sortedMembers.isEmpty) return null;
+    if (currentSelectedId == null || sortedMembers.isEmpty) return null;
     final exists = sortedMembers.any(
       (member) => member.id == currentSelectedId,
     );
-    return exists ? currentSelectedId : sortedMembers.first.id;
+    return exists ? currentSelectedId : null;
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = Responsive.isDesktop(context);
+    final pagePadding = Responsive.isMobile(context) ? 20.0 : 32.0;
     final totalViews = _members.fold<int>(
       0,
       (sum, member) => sum + member.profileViews,
     );
     final totalTaps = _members.fold<int>(0, (sum, member) => sum + member.taps);
+    final totalQrScans = _members.fold<int>(
+      0,
+      (sum, member) => sum + member.qrScans,
+    );
     final totalClicks = _members.fold<int>(
       0,
       (sum, member) => sum + member.totalClicks,
@@ -145,33 +163,19 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
       0,
       (sum, member) => sum + member.leads,
     );
-    final viewsSeries = _sumSeries(
-      _members.map((member) => member.viewsByDay).toList(),
-    );
-    final tapsSeries = _sumSeries(
-      _members.map((member) => member.tapsByDay).toList(),
-    );
-    final clicksSeries = _sumSeries(
-      _members.map((member) => member.clicksByDay).toList(),
-    );
-    final rankedMembers = [..._members]
-      ..sort((a, b) => b.leads.compareTo(a.leads));
-    final filteredMembers = rankedMembers.where((member) {
-      final query = _memberSearch.trim().toLowerCase();
-      if (query.isEmpty) return true;
-      return member.name.toLowerCase().contains(query) ||
-          member.jobTitle.toLowerCase().contains(query);
-    }).toList();
-    final topMember = rankedMembers.isNotEmpty ? rankedMembers.first : null;
-    final selectionPool = filteredMembers.isNotEmpty
-        ? filteredMembers
-        : rankedMembers;
-    final selectedMember = selectionPool.firstWhere(
-      (member) => member.id == _selectedMemberId,
-      orElse: () =>
-          selectionPool.isNotEmpty ? selectionPool.first : _emptyMember,
-    );
-    final hasSelectedMember = selectionPool.isNotEmpty;
+    final activeActivity = _selectedMemberId == null
+        ? _teamActivity
+        : _teamActivity
+              .where((item) => item.member.id == _selectedMemberId)
+              .toList();
+    final lastActivityByMemberId = <String, DateTime>{};
+    for (final item in _teamActivity) {
+      final current = lastActivityByMemberId[item.member.id];
+      if (current == null || item.event.timestamp.isAfter(current)) {
+        lastActivityByMemberId[item.member.id] = item.event.timestamp;
+      }
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: RefreshIndicator(
@@ -198,16 +202,17 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
                     Text(
                       'Equipo',
                       style: GoogleFonts.outfit(
-                        fontSize: 28,
+                        fontSize: isDesktop ? 42 : 30,
                         fontWeight: FontWeight.w800,
                         color: context.textPrimary,
+                        height: 1.0,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 10),
                     Text(
-                      'Rendimiento del equipo y visibilidad por miembro en un mismo panel.',
+                      'Gestiona tu equipo y visualiza el rendimiento en conjunto.',
                       style: GoogleFonts.dmSans(
-                        fontSize: 13,
+                        fontSize: 15,
                         color: context.textSecondary,
                       ),
                     ),
@@ -230,219 +235,61 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
             else ...[
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    Responsive.isMobile(context) ? 20 : 32,
-                    24,
-                    Responsive.isMobile(context) ? 20 : 32,
-                    0,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: _teamAnalyticsSurfaceColor(context),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(
-                        color: _teamAnalyticsBorderColor(context),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Visión general del equipo',
-                          style: GoogleFonts.outfit(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w800,
-                            color: context.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${_members.length} miembros activos con links, leads y recorrido de interacción visible.',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: context.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        _OverviewMetricsLine(
-                          activeMembers: _members.length,
-                          totalViews: totalViews,
-                          totalTaps: totalTaps,
-                          totalClicks: totalClicks,
-                          totalLeads: totalLeads,
-                        ),
-                      ],
-                    ),
+                  padding: EdgeInsets.fromLTRB(pagePadding, 28, pagePadding, 0),
+                  child: _TeamKpiGrid(
+                    totalViews: totalViews,
+                    totalTaps: totalTaps,
+                    totalQrScans: totalQrScans,
+                    totalClicks: totalClicks,
+                    totalLeads: totalLeads,
                   ),
                 ),
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    Responsive.isMobile(context) ? 20 : 32,
-                    16,
-                    Responsive.isMobile(context) ? 20 : 32,
-                    0,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: _teamAnalyticsSurfaceColor(context),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(
-                        color: _teamAnalyticsBorderColor(context),
-                      ),
-                    ),
-                    child: Responsive.isDesktop(context)
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 5,
-                                child: _TeamLeaderPanel(
-                                  member: topMember,
-                                  totalMembers: _members.length,
-                                  totalLeads: totalLeads,
-                                  totalViews: totalViews,
-                                ),
+                  padding: EdgeInsets.fromLTRB(pagePadding, 20, pagePadding, 0),
+                  child: isDesktop
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 6,
+                              child: _TeamDirectoryPanel(
+                                members: _members,
+                                lastActivityByMemberId: lastActivityByMemberId,
                               ),
-                              const SizedBox(width: 24),
-                              Expanded(
-                                flex: 4,
-                                child: _TopMembersColumn(
-                                  members: rankedMembers,
-                                ),
+                            ),
+                            const SizedBox(width: 20),
+                            Expanded(
+                              flex: 4,
+                              child: _TeamActivityPanel(
+                                members: _members,
+                                selectedMemberId: _selectedMemberId,
+                                activity: activeActivity,
+                                onSelectedMemberChanged: (memberId) {
+                                  setState(() => _selectedMemberId = memberId);
+                                },
                               ),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              _TeamLeaderPanel(
-                                member: topMember,
-                                totalMembers: _members.length,
-                                totalLeads: totalLeads,
-                                totalViews: totalViews,
-                              ),
-                              const SizedBox(height: 20),
-                              _TopMembersColumn(members: rankedMembers),
-                            ],
-                          ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    Responsive.isMobile(context) ? 20 : 32,
-                    16,
-                    Responsive.isMobile(context) ? 20 : 32,
-                    0,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: _teamAnalyticsSurfaceColor(context),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(
-                        color: _teamAnalyticsBorderColor(context),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Tendencias del equipo',
-                          style: GoogleFonts.outfit(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: context.textPrimary,
-                          ),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          children: [
+                            _TeamDirectoryPanel(
+                              members: _members,
+                              lastActivityByMemberId: lastActivityByMemberId,
+                            ),
+                            const SizedBox(height: 20),
+                            _TeamActivityPanel(
+                              members: _members,
+                              selectedMemberId: _selectedMemberId,
+                              activity: activeActivity,
+                              onSelectedMemberChanged: (memberId) {
+                                setState(() => _selectedMemberId = memberId);
+                              },
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Comparativa semanal de vistas, taps y clicks para entender el ritmo del equipo.',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: context.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        _TeamTrendSection(
-                          viewsSeries: viewsSeries,
-                          tapsSeries: tapsSeries,
-                          clicksSeries: clicksSeries,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    Responsive.isMobile(context) ? 20 : 32,
-                    16,
-                    Responsive.isMobile(context) ? 20 : 32,
-                    0,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: _teamAnalyticsSurfaceColor(context),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(
-                        color: _teamAnalyticsBorderColor(context),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Explorador del equipo',
-                          style: GoogleFonts.outfit(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: context.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Selecciona un miembro para revisar su desempeño, leads capturados y comportamiento comercial.',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            color: context.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        _TeamMemberExplorer(
-                          searchController: _searchCtrl,
-                          onSearchChanged: (value) {
-                            setState(() => _memberSearch = value);
-                          },
-                          members: filteredMembers,
-                          selectedMemberId: _selectedMemberId,
-                          onSelectMember: (member) {
-                            setState(() => _selectedMemberId = member.id);
-                          },
-                          detail: hasSelectedMember
-                              ? _MemberAnalyticsCard(
-                                  member: selectedMember,
-                                  leads:
-                                      _memberLeads[selectedMember.id] ??
-                                      const [],
-                                  rank:
-                                      rankedMembers.indexWhere(
-                                        (member) =>
-                                            member.id == selectedMember.id,
-                                      ) +
-                                      1,
-                                )
-                              : const _EmptyTeamExplorer(),
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -451,6 +298,598 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
         ),
       ),
     );
+  }
+}
+
+class _TeamActivityItem {
+  final TeamMemberModel member;
+  final VisitEventModel event;
+
+  const _TeamActivityItem({required this.member, required this.event});
+}
+
+class _TeamKpiGrid extends StatelessWidget {
+  final int totalViews;
+  final int totalTaps;
+  final int totalQrScans;
+  final int totalClicks;
+  final int totalLeads;
+
+  const _TeamKpiGrid({
+    required this.totalViews,
+    required this.totalTaps,
+    required this.totalQrScans,
+    required this.totalClicks,
+    required this.totalLeads,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _TeamKpiItem(
+        icon: Icons.visibility_outlined,
+        value: '$totalViews',
+        label: 'Visitas totales',
+      ),
+      _TeamKpiItem(
+        icon: Icons.nfc_outlined,
+        value: '$totalTaps',
+        label: 'Taps NFC',
+      ),
+      _TeamKpiItem(
+        icon: Icons.qr_code_2_rounded,
+        value: '$totalQrScans',
+        label: 'Escaneos QR',
+      ),
+      _TeamKpiItem(
+        icon: Icons.share_outlined,
+        value: '$totalClicks',
+        label: 'Clicks totales',
+      ),
+      _TeamKpiItem(
+        icon: Icons.handshake_outlined,
+        value: '$totalLeads',
+        label: 'Leads generados',
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isDesktop = constraints.maxWidth >= 1100;
+        final columns = isDesktop
+            ? 5
+            : constraints.maxWidth >= 720
+            ? 3
+            : 1;
+        final gap = 14.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: items
+              .map((item) => SizedBox(width: width, child: _TeamKpiCard(item)))
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _TeamKpiItem {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _TeamKpiItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+}
+
+class _TeamKpiCard extends StatelessWidget {
+  final _TeamKpiItem item;
+
+  const _TeamKpiCard(this.item);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 150,
+      padding: const EdgeInsets.fromLTRB(26, 24, 26, 22),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(item.icon, color: AppColors.primary, size: 23),
+          const Spacer(),
+          Text(
+            item.value,
+            style: GoogleFonts.outfit(
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+              height: 0.95,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            item.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.dmSans(
+              fontSize: 15,
+              color: context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamDirectoryPanel extends StatelessWidget {
+  final List<TeamMemberModel> members;
+  final Map<String, DateTime> lastActivityByMemberId;
+
+  const _TeamDirectoryPanel({
+    required this.members,
+    required this.lastActivityByMemberId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 26),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.groups_2_outlined, color: AppColors.primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Directorio del equipo',
+                  style: GoogleFonts.outfit(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    color: context.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '${members.length} activos',
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: context.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 820),
+              child: Column(
+                children: [
+                  const _TeamDirectoryHeader(),
+                  Divider(color: context.borderStrongSoft, height: 28),
+                  ...members.map(
+                    (member) => _TeamDirectoryRow(
+                      member: member,
+                      lastActivity: lastActivityByMemberId[member.id],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamDirectoryHeader extends StatelessWidget {
+  const _TeamDirectoryHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = GoogleFonts.dmSans(
+      fontSize: 14,
+      fontWeight: FontWeight.w700,
+      color: context.textSecondary,
+    );
+    return Row(
+      children: [
+        SizedBox(width: 300, child: Text('Miembro', style: style)),
+        SizedBox(width: 96, child: Text('Rol', style: style)),
+        SizedBox(width: 82, child: Text('Perfiles', style: style)),
+        SizedBox(width: 82, child: Text('Tarjetas', style: style)),
+        SizedBox(width: 150, child: Text('Última actividad', style: style)),
+        SizedBox(width: 110, child: Text('Estado', style: style)),
+      ],
+    );
+  }
+}
+
+class _TeamDirectoryRow extends StatelessWidget {
+  final TeamMemberModel member;
+  final DateTime? lastActivity;
+
+  const _TeamDirectoryRow({required this.member, required this.lastActivity});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 300,
+            child: Row(
+              children: [
+                _TeamMemberAvatar(member: member, size: 46),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        member.name.trim().isNotEmpty
+                            ? member.name
+                            : 'Miembro sin nombre',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        member.email.trim().isNotEmpty
+                            ? member.email
+                            : member.jobTitle.trim().isNotEmpty
+                            ? member.jobTitle
+                            : 'Sin correo registrado',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 96,
+            child: Text(_roleLabel(member), style: _rowStyle(context)),
+          ),
+          SizedBox(
+            width: 82,
+            child: Text('${member.cardIds.length}', style: _rowStyle(context)),
+          ),
+          SizedBox(
+            width: 82,
+            child: Text('${member.cardIds.length}', style: _rowStyle(context)),
+          ),
+          SizedBox(
+            width: 150,
+            child: Text(
+              lastActivity == null ? '-' : _relativeActivity(lastActivity!),
+              style: _rowStyle(context),
+            ),
+          ),
+          SizedBox(
+            width: 110,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'Activo',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.success,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  TextStyle _rowStyle(BuildContext context) {
+    return GoogleFonts.dmSans(
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      color: context.textSecondary,
+    );
+  }
+}
+
+class _TeamActivityPanel extends StatelessWidget {
+  final List<TeamMemberModel> members;
+  final String? selectedMemberId;
+  final List<_TeamActivityItem> activity;
+  final ValueChanged<String?> onSelectedMemberChanged;
+
+  const _TeamActivityPanel({
+    required this.members,
+    required this.selectedMemberId,
+    required this.activity,
+    required this.onSelectedMemberChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(28, 28, 28, 28),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.article_outlined, color: AppColors.primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Actividad del equipo',
+                  style: GoogleFonts.outfit(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    color: context.textPrimary,
+                  ),
+                ),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 220),
+                child: TeamMemberFilterDropdown(
+                  members: members,
+                  selectedMemberId: selectedMemberId,
+                  onChanged: onSelectedMemberChanged,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Últimas interacciones registradas.',
+            style: GoogleFonts.dmSans(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 18),
+          if (activity.isEmpty)
+            SizedBox(
+              height: 220,
+              child: Center(
+                child: Text(
+                  'Aún no hay actividad para este filtro.',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    color: context.textMuted,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...activity.take(12).map((item) => _TeamActivityRow(item: item)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamActivityRow extends StatelessWidget {
+  final _TeamActivityItem item;
+
+  const _TeamActivityRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 22),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_activityIcon(item.event), color: AppColors.primary, size: 23),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${item.member.name} · ${_activityLabel(item.event)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.member.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            _activityTimestamp(item.event.timestamp),
+            textAlign: TextAlign.right,
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamMemberAvatar extends StatelessWidget {
+  final TeamMemberModel member;
+  final double size;
+
+  const _TeamMemberAvatar({required this.member, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = member.avatarUrl?.trim();
+    final hasImage = url != null && url.isNotEmpty;
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        shape: BoxShape.circle,
+        image: hasImage
+            ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover)
+            : null,
+      ),
+      child: hasImage
+          ? null
+          : Text(
+              _memberInitials(member),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: size * 0.38,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+    );
+  }
+}
+
+String _memberInitials(TeamMemberModel member) {
+  final name = member.name.trim();
+  if (name.isEmpty) return '?';
+  final parts = name.split(RegExp(r'\s+'));
+  if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  return name[0].toUpperCase();
+}
+
+String _roleLabel(TeamMemberModel member) {
+  if (member.isAdmin) return 'Owner';
+  final role = member.role.trim();
+  if (role.isEmpty || role == 'default') return 'Miembro';
+  return role[0].toUpperCase() + role.substring(1);
+}
+
+String _relativeActivity(DateTime timestamp) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final date = DateTime(timestamp.year, timestamp.month, timestamp.day);
+  if (date == today) return 'Hoy';
+  if (date == today.subtract(const Duration(days: 1))) return 'Ayer';
+  return _activityDate(timestamp);
+}
+
+String _activityTimestamp(DateTime timestamp) {
+  final h = timestamp.hour.toString().padLeft(2, '0');
+  final m = timestamp.minute.toString().padLeft(2, '0');
+  return '${_activityDate(timestamp)} $h:$m';
+}
+
+String _activityDate(DateTime timestamp) {
+  final d = timestamp.day.toString().padLeft(2, '0');
+  final m = timestamp.month.toString().padLeft(2, '0');
+  return '$d/$m/${timestamp.year}';
+}
+
+IconData _activityIcon(VisitEventModel event) {
+  switch (event.source) {
+    case 'nfc':
+      return Icons.nfc_outlined;
+    case 'qr':
+    case 'link':
+      return Icons.visibility_outlined;
+    case 'downloaded_contact':
+      return Icons.download_outlined;
+    case 'form':
+      return Icons.assignment_outlined;
+    case 'contact':
+    case 'social':
+    case 'share':
+      return Icons.ads_click_outlined;
+    default:
+      return Icons.visibility_outlined;
+  }
+}
+
+String _activityLabel(VisitEventModel event) {
+  switch (event.source) {
+    case 'nfc':
+      return 'Tap NFC';
+    case 'qr':
+      return 'Escaneo QR';
+    case 'link':
+      return 'Visita al perfil';
+    case 'downloaded_contact':
+      return 'Guardó contacto';
+    case 'form':
+      return 'Formulario completado';
+    case 'contact':
+    case 'social':
+      final label = event.label?.trim();
+      return label == null || label.isEmpty
+          ? 'Click en enlace'
+          : 'Click en $label';
+    case 'share':
+      return 'Compartió perfil';
+    default:
+      return 'Visita al perfil';
   }
 }
 

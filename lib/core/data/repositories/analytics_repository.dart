@@ -52,6 +52,22 @@ class AnalyticsRepository {
     DateTime? from,
     DateTime? to,
   }) async {
+    return _fetchSummaryForCardIds([cardId], from: from, to: to);
+  }
+
+  static Future<AnalyticsSummaryModel> fetchSummaryForCards(
+    List<String> cardIds, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    return _fetchSummaryForCardIds(cardIds, from: from, to: to);
+  }
+
+  static Future<AnalyticsSummaryModel> _fetchSummaryForCardIds(
+    List<String> cardIds, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
     final now = DateTime.now();
     final rangeEnd = to != null
         ? DateTime(to.year, to.month, to.day, 23, 59, 59, 999, 999)
@@ -61,13 +77,45 @@ class AnalyticsRepository {
         : now.subtract(const Duration(days: 6));
     final rangeDuration = rangeEnd.difference(rangeStart);
     final prevStart = rangeStart.subtract(rangeDuration);
+    final uniqueCardIds = cardIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (uniqueCardIds.isEmpty) {
+      return const AnalyticsSummaryModel(
+        totalVisits: 0,
+        totalTaps: 0,
+        totalQrScans: 0,
+        totalClicks: 0,
+        totalInteractions: 0,
+        visitsThisWeek: 0,
+        visitsLastWeek: 0,
+        tapsThisPeriod: 0,
+        tapsLastPeriod: 0,
+        clicksThisPeriod: 0,
+        clicksLastPeriod: 0,
+        interactionsThisPeriod: 0,
+        interactionsLastPeriod: 0,
+        linkStats: [],
+        recentEvents: [],
+        visitsByDay: [0, 0, 0, 0, 0, 0, 0],
+      );
+    }
 
     // All visit events
-    final allEvents = await _db
-        .from('visit_events')
-        .select()
-        .eq('card_id', cardId)
-        .order('timestamp', ascending: false);
+    final allEvents = uniqueCardIds.length == 1
+        ? await _db
+              .from('visit_events')
+              .select()
+              .eq('card_id', uniqueCardIds.first)
+              .order('timestamp', ascending: false)
+        : await _db
+              .from('visit_events')
+              .select()
+              .inFilter('card_id', uniqueCardIds)
+              .order('timestamp', ascending: false);
 
     final events = (allEvents as List)
         .map((e) => VisitEventModel.fromJson(e as Map<String, dynamic>))
@@ -178,6 +226,37 @@ class AnalyticsRepository {
       recentEvents: recentEvents,
       visitsByDay: visitsByDay,
     );
+  }
+
+  static Future<List<VisitEventModel>> fetchRecentEventsForCards(
+    List<String> cardIds, {
+    int limit = 20,
+  }) async {
+    final uniqueCardIds = cardIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (uniqueCardIds.isEmpty) return const [];
+
+    final rows = uniqueCardIds.length == 1
+        ? await _db
+              .from('visit_events')
+              .select()
+              .eq('card_id', uniqueCardIds.first)
+              .order('timestamp', ascending: false)
+              .limit(limit)
+        : await _db
+              .from('visit_events')
+              .select()
+              .inFilter('card_id', uniqueCardIds)
+              .order('timestamp', ascending: false)
+              .limit(limit);
+
+    final events = (rows as List)
+        .map((e) => VisitEventModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return hydrateEvents(events);
   }
 
   // ─── Record a visit (fire-and-forget) ────────────────────────────────────
