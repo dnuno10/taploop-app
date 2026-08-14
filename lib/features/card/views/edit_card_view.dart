@@ -254,6 +254,12 @@ class _EditCardViewState extends State<EditCardView>
     _suppressTextSync = false;
   }
 
+  void _setCardAndSyncAppState(DigitalCardModel card) {
+    if (!mounted) return;
+    setState(() => _card = card);
+    appState.updateCard(card);
+  }
+
   Future<void> _loadFormCompletion() async {
     final cardId = _card.id;
     if (cardId.isEmpty) {
@@ -469,10 +475,8 @@ class _EditCardViewState extends State<EditCardView>
     try {
       final saved = await CardRepository.addContactItem(_card.id, item);
       if (mounted) {
-        setState(
-          () => _card = _card.copyWith(
-            contactItems: [..._card.contactItems, saved],
-          ),
+        _setCardAndSyncAppState(
+          _card.copyWith(contactItems: [..._card.contactItems, saved]),
         );
         TapLoopToast.show(
           context,
@@ -495,8 +499,8 @@ class _EditCardViewState extends State<EditCardView>
     try {
       await CardRepository.updateContactItem(updatedItem);
       if (mounted) {
-        setState(
-          () => _card = _card.copyWith(
+        _setCardAndSyncAppState(
+          _card.copyWith(
             contactItems: _card.contactItems
                 .map((c) => c.id == updatedItem.id ? updatedItem : c)
                 .toList(),
@@ -509,7 +513,7 @@ class _EditCardViewState extends State<EditCardView>
         );
       }
     } catch (error, stackTrace) {
-      debugPrint('No se pudo eliminar el formulario: $error');
+      debugPrint('No se pudo actualizar el contacto: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         TapLoopToast.show(
@@ -597,10 +601,8 @@ class _EditCardViewState extends State<EditCardView>
     try {
       final saved = await CardRepository.addSocialLink(_card.id, link);
       if (mounted) {
-        setState(
-          () => _card = _card.copyWith(
-            socialLinks: [..._card.socialLinks, saved],
-          ),
+        _setCardAndSyncAppState(
+          _card.copyWith(socialLinks: [..._card.socialLinks, saved]),
         );
         TapLoopToast.show(
           context,
@@ -623,8 +625,8 @@ class _EditCardViewState extends State<EditCardView>
     try {
       await CardRepository.updateSocialLink(updatedLink);
       if (mounted) {
-        setState(
-          () => _card = _card.copyWith(
+        _setCardAndSyncAppState(
+          _card.copyWith(
             socialLinks: _card.socialLinks
                 .map((s) => s.id == updatedLink.id ? updatedLink : s)
                 .toList(),
@@ -677,6 +679,9 @@ class _EditCardViewState extends State<EditCardView>
         }
       }
       await CardRepository.reorderContactItems(newItems);
+      if (mounted) {
+        _setCardAndSyncAppState(_card.copyWith(contactItems: newItems));
+      }
       if (mounted && newItems.length < oldItems.length) {
         TapLoopToast.show(
           context,
@@ -684,9 +689,11 @@ class _EditCardViewState extends State<EditCardView>
           TapLoopToastType.success,
         );
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('No se pudieron actualizar los contactos: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
-        setState(() => _card = _card.copyWith(contactItems: oldItems));
+        _setCardAndSyncAppState(_card.copyWith(contactItems: oldItems));
         TapLoopToast.show(
           context,
           'No se pudieron actualizar los contactos. Intenta de nuevo.',
@@ -726,6 +733,9 @@ class _EditCardViewState extends State<EditCardView>
         }
       }
       await CardRepository.reorderSocialLinks(newLinks);
+      if (mounted) {
+        _setCardAndSyncAppState(_card.copyWith(socialLinks: newLinks));
+      }
       if (mounted && newLinks.length < oldLinks.length) {
         TapLoopToast.show(
           context,
@@ -733,9 +743,11 @@ class _EditCardViewState extends State<EditCardView>
           TapLoopToastType.success,
         );
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('No se pudieron actualizar los enlaces: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
-        setState(() => _card = _card.copyWith(socialLinks: oldLinks));
+        _setCardAndSyncAppState(_card.copyWith(socialLinks: oldLinks));
         TapLoopToast.show(
           context,
           'No se pudieron actualizar las redes sociales. Intenta de nuevo.',

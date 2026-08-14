@@ -65,7 +65,7 @@ class SocialLinkModel {
     if (cardId != null) 'card_id': cardId,
     'platform': platform.name,
     'url': url,
-    if (customLabel != null) 'custom_label': customLabel,
+    'custom_label': customLabel,
     'is_visible': isVisible,
     'sort_order': sortOrder,
   };

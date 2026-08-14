@@ -47,7 +47,7 @@ class ContactItemModel {
     if (cardId != null) 'card_id': cardId,
     'type': type.name,
     'value': value,
-    if (label != null) 'label': label,
+    'label': label,
     'is_visible': isVisible,
     'sort_order': sortOrder,
   };

@@ -632,11 +632,39 @@ class CardRepository {
   }
 
   static Future<void> updateContactItem(ContactItemModel item) async {
-    await _db.from('contact_items').update(item.toJson()).eq('id', item.id);
+    final updated = await _db
+        .from('contact_items')
+        .update(item.toJson())
+        .eq('id', item.id)
+        .select('id');
+    if ((updated as List).isEmpty) {
+      throw Exception('No se encontró el contacto para actualizar.');
+    }
   }
 
   static Future<void> deleteContactItem(String itemId) async {
-    await _db.from('contact_items').delete().eq('id', itemId);
+    try {
+      await _db.rpc(
+        'delete_contact_item',
+        params: {'p_contact_item_id': itemId},
+      );
+      return;
+    } catch (error) {
+      if (!_isMissingDeleteContactItemRpc(error)) rethrow;
+    }
+
+    await _db
+        .from('visit_events')
+        .update({'contact_item_id': null})
+        .eq('contact_item_id', itemId);
+    final deleted = await _db
+        .from('contact_items')
+        .delete()
+        .eq('id', itemId)
+        .select('id');
+    if ((deleted as List).isEmpty) {
+      throw Exception('No se encontró el contacto para eliminar.');
+    }
   }
 
   static Future<void> reorderContactItems(List<ContactItemModel> items) async {
@@ -644,7 +672,8 @@ class CardRepository {
       await _db
           .from('contact_items')
           .update({'sort_order': i})
-          .eq('id', items[i].id);
+          .eq('id', items[i].id)
+          .select('id');
     }
   }
 
@@ -673,11 +702,36 @@ class CardRepository {
   }
 
   static Future<void> updateSocialLink(SocialLinkModel link) async {
-    await _db.from('social_links').update(link.toJson()).eq('id', link.id);
+    final updated = await _db
+        .from('social_links')
+        .update(link.toJson())
+        .eq('id', link.id)
+        .select('id');
+    if ((updated as List).isEmpty) {
+      throw Exception('No se encontró el enlace para actualizar.');
+    }
   }
 
   static Future<void> deleteSocialLink(String linkId) async {
-    await _db.from('social_links').delete().eq('id', linkId);
+    try {
+      await _db.rpc('delete_social_link', params: {'p_social_link_id': linkId});
+      return;
+    } catch (error) {
+      if (!_isMissingDeleteSocialLinkRpc(error)) rethrow;
+    }
+
+    await _db
+        .from('visit_events')
+        .update({'social_link_id': null})
+        .eq('social_link_id', linkId);
+    final deleted = await _db
+        .from('social_links')
+        .delete()
+        .eq('id', linkId)
+        .select('id');
+    if ((deleted as List).isEmpty) {
+      throw Exception('No se encontró el enlace para eliminar.');
+    }
   }
 
   static Future<void> reorderSocialLinks(List<SocialLinkModel> links) async {
@@ -685,8 +739,23 @@ class CardRepository {
       await _db
           .from('social_links')
           .update({'sort_order': i})
-          .eq('id', links[i].id);
+          .eq('id', links[i].id)
+          .select('id');
     }
+  }
+
+  static bool _isMissingDeleteContactItemRpc(Object error) {
+    final message = error.toString();
+    return message.contains('delete_contact_item') ||
+        message.contains('PGRST202') ||
+        message.contains('Could not find the function');
+  }
+
+  static bool _isMissingDeleteSocialLinkRpc(Object error) {
+    final message = error.toString();
+    return message.contains('delete_social_link') ||
+        message.contains('PGRST202') ||
+        message.contains('Could not find the function');
   }
 
   // ─── Smart forms ──────────────────────────────────────────────────────────
