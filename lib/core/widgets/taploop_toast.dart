@@ -128,12 +128,15 @@ class _ToastEntryState extends State<_ToastEntry>
                   ),
                 ),
                 const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _dismiss,
-                  child: const Icon(
-                    Icons.close,
-                    color: AppColors.white,
-                    size: 18,
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: _dismiss,
+                    child: const Icon(
+                      Icons.close,
+                      color: AppColors.white,
+                      size: 18,
+                    ),
                   ),
                 ),
               ],

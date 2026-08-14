@@ -2,6 +2,9 @@ DROP FUNCTION IF EXISTS public.delete_contact_item(uuid);
 DROP FUNCTION IF EXISTS public.delete_social_link(uuid);
 
 ALTER TABLE public.visit_events
+DROP CONSTRAINT IF EXISTS visit_events_source_ref_check;
+
+ALTER TABLE public.visit_events
 DROP CONSTRAINT IF EXISTS visit_events_contact_item_id_fkey;
 
 ALTER TABLE public.visit_events
@@ -37,6 +40,32 @@ FOREIGN KEY (social_link_id)
 REFERENCES public.social_links(id)
 ON DELETE SET NULL;
 
+ALTER TABLE public.visit_events
+ADD CONSTRAINT visit_events_source_ref_check
+CHECK (
+  num_nonnulls(contact_item_id, social_link_id, smart_form_id) <= 1
+  AND (
+    source <> 'contact'
+    OR (social_link_id IS NULL AND smart_form_id IS NULL)
+  )
+  AND (
+    source <> 'social'
+    OR (contact_item_id IS NULL AND smart_form_id IS NULL)
+  )
+  AND (
+    source <> 'form'
+    OR (contact_item_id IS NULL AND social_link_id IS NULL)
+  )
+  AND (
+    source IN ('contact', 'social', 'form')
+    OR (
+      contact_item_id IS NULL
+      AND social_link_id IS NULL
+      AND smart_form_id IS NULL
+    )
+  )
+);
+
 CREATE OR REPLACE FUNCTION public.delete_contact_item(p_contact_item_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -45,13 +74,9 @@ SET search_path = public
 AS $$
 DECLARE
   v_owner_id uuid;
-  v_card_org_id uuid;
-  v_requester_id uuid;
-  v_requester_org_id uuid;
-  v_requester_role text;
 BEGIN
-  SELECT dc.user_id, dc.org_id
-  INTO v_owner_id, v_card_org_id
+  SELECT dc.user_id
+  INTO v_owner_id
   FROM public.contact_items ci
   JOIN public.digital_cards dc ON dc.id = ci.card_id
   WHERE ci.id = p_contact_item_id;
@@ -60,29 +85,7 @@ BEGIN
     RETURN;
   END IF;
 
-  SELECT id, org_id, role
-  INTO v_requester_id, v_requester_org_id, v_requester_role
-  FROM public.users
-  WHERE id = auth.uid()
-    OR (
-      auth.email() IS NOT NULL
-      AND lower(email) = lower(auth.email())
-    )
-  ORDER BY CASE WHEN id = auth.uid() THEN 0 ELSE 1 END
-  LIMIT 1;
-
-  IF auth.uid() IS NULL
-    OR NOT (
-      auth.uid() = v_owner_id
-      OR v_requester_id = v_owner_id
-      OR v_requester_role = 'admin'
-      OR (
-        v_card_org_id IS NOT NULL
-        AND v_requester_org_id IS NOT NULL
-        AND v_card_org_id = v_requester_org_id
-      )
-    )
-  THEN
+  IF auth.uid() IS NULL OR auth.uid() <> v_owner_id THEN
     RAISE EXCEPTION 'No autorizado para eliminar este contacto.'
       USING ERRCODE = '42501';
   END IF;
@@ -100,13 +103,9 @@ SET search_path = public
 AS $$
 DECLARE
   v_owner_id uuid;
-  v_card_org_id uuid;
-  v_requester_id uuid;
-  v_requester_org_id uuid;
-  v_requester_role text;
 BEGIN
-  SELECT dc.user_id, dc.org_id
-  INTO v_owner_id, v_card_org_id
+  SELECT dc.user_id
+  INTO v_owner_id
   FROM public.social_links sl
   JOIN public.digital_cards dc ON dc.id = sl.card_id
   WHERE sl.id = p_social_link_id;
@@ -115,29 +114,7 @@ BEGIN
     RETURN;
   END IF;
 
-  SELECT id, org_id, role
-  INTO v_requester_id, v_requester_org_id, v_requester_role
-  FROM public.users
-  WHERE id = auth.uid()
-    OR (
-      auth.email() IS NOT NULL
-      AND lower(email) = lower(auth.email())
-    )
-  ORDER BY CASE WHEN id = auth.uid() THEN 0 ELSE 1 END
-  LIMIT 1;
-
-  IF auth.uid() IS NULL
-    OR NOT (
-      auth.uid() = v_owner_id
-      OR v_requester_id = v_owner_id
-      OR v_requester_role = 'admin'
-      OR (
-        v_card_org_id IS NOT NULL
-        AND v_requester_org_id IS NOT NULL
-        AND v_card_org_id = v_requester_org_id
-      )
-    )
-  THEN
+  IF auth.uid() IS NULL OR auth.uid() <> v_owner_id THEN
     RAISE EXCEPTION 'No autorizado para eliminar este enlace.'
       USING ERRCODE = '42501';
   END IF;

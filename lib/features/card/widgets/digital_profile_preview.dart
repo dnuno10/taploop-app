@@ -419,7 +419,7 @@ class _ScreenContent extends StatelessWidget {
             Text(
               'Guardar contacto',
               style: GoogleFonts.outfit(
-                fontSize: 11.5 * scale,
+                fontSize: 10.8 * scale,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
               ),
@@ -657,7 +657,7 @@ class _ScreenContent extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.visible,
               style: GoogleFonts.outfit(
-                fontSize: 13 * scale,
+                fontSize: 12 * scale,
                 height: 1.12,
                 fontWeight: FontWeight.w800,
                 color: const Color(0xFF0D0D0D),

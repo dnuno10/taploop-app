@@ -710,7 +710,7 @@ class _SaveContactButton extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                 ),
                 textStyle: GoogleFonts.dmSans(
-                  fontSize: 19,
+                  fontSize: 17,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -847,7 +847,7 @@ class _ModernSecondaryButton extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
-                    fontSize: 19,
+                    fontSize: 17,
                     height: 1.05,
                     fontWeight: FontWeight.w800,
                     color: onTap == null
@@ -1245,7 +1245,7 @@ class _ContactSection extends StatelessWidget {
                                   ? Text(
                                       _modernLabel(item),
                                       style: GoogleFonts.outfit(
-                                        fontSize: 20,
+                                        fontSize: 17,
                                         height: 1.08,
                                         fontWeight: FontWeight.w800,
                                         color: const Color(0xFF0D0D0D),
@@ -1677,7 +1677,7 @@ class _CalendarButton extends StatelessWidget {
                         child: Text(
                           'Agendar reunión',
                           style: GoogleFonts.outfit(
-                            fontSize: 20,
+                            fontSize: 18,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),

@@ -3133,15 +3133,6 @@ class _SocialRow extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Destacar enlace',
-                    onPressed: () {},
-                    icon: Icon(
-                      Icons.star_border_rounded,
-                      color: context.textSecondary,
-                      size: 20,
-                    ),
-                  ),
-                  IconButton(
                     tooltip: 'Editar enlace',
                     onPressed: onEdit,
                     icon: Icon(
