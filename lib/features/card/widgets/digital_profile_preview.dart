@@ -462,7 +462,7 @@ class _ScreenContent extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 14 * scale),
           child: Column(
             children: [
-              for (final link in socials.take(5))
+              for (final link in socials)
                 Padding(
                   padding: EdgeInsets.only(bottom: 8 * scale),
                   child: _listRow(
@@ -553,13 +553,13 @@ class _ScreenContent extends StatelessWidget {
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 14 * scale),
           child: Wrap(
-            spacing: 11 * scale,
-            runSpacing: 11 * scale,
+            spacing: 9 * scale,
+            runSpacing: 9 * scale,
             children: [
-              for (final link in socials.take(5))
+              for (final link in socials)
                 Container(
-                  width: 55 * scale,
-                  height: 55 * scale,
+                  width: 48 * scale,
+                  height: 48 * scale,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -572,7 +572,7 @@ class _ScreenContent extends StatelessWidget {
                     child: PlatformIcon.social(
                       platform: link.platform,
                       framed: false,
-                      size: 31 * scale,
+                      size: 27 * scale,
                     ),
                   ),
                 ),
