@@ -6,6 +6,7 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/widgets/taploop_button.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_text_field.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../../auth/models/user_model.dart';
@@ -82,7 +83,7 @@ class _SettingsViewState extends State<SettingsView> {
         final user = appState.currentUser;
         if (user == null) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: TapLoopProgressIndicator()),
           );
         }
 

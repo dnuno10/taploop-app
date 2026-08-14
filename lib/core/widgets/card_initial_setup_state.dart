@@ -12,6 +12,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_theme_extensions.dart';
 import '../../features/auth/models/user_model.dart';
 import '../../features/card/models/digital_card_model.dart';
+import 'taploop_progress_indicator.dart';
 
 class CardInitialSetupState extends StatefulWidget {
   final VoidCallback? onLinked;
@@ -374,7 +375,7 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                                           color: context.bgSubtle,
                                           alignment: Alignment.center,
                                           child:
-                                              const CircularProgressIndicator(),
+                                              const TapLoopProgressIndicator(),
                                         ))
                                 : Stack(
                                     fit: StackFit.expand,
@@ -437,7 +438,7 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                                           child: Column(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const CircularProgressIndicator(),
+                                              const TapLoopProgressIndicator(),
                                               const SizedBox(height: 14),
                                               Text(
                                                 'Validando QR y vinculando tarjeta...',
@@ -494,7 +495,7 @@ class _CardInitialSetupStateState extends State<CardInitialSetupState> {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const CircularProgressIndicator(),
+                                      const TapLoopProgressIndicator(),
                                       const SizedBox(height: 14),
                                       Text(
                                         'Validando QR y vinculando tarjeta...',

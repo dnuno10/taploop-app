@@ -15,6 +15,7 @@ import '../../../core/services/auth_service.dart';
 import '../../../core/utils/visitor_info.dart';
 import '../../../core/widgets/native_web_image.dart';
 import '../../../core/widgets/platform_icon.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/digital_card_model.dart';
 import '../models/contact_item_model.dart';
@@ -234,9 +235,7 @@ class _PublicCardViewState extends State<PublicCardView> {
     if (_loading) {
       return const Scaffold(
         backgroundColor: AppColors.surface,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        ),
+        body: Center(child: TapLoopProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -2066,14 +2065,7 @@ class _FormBody extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 15),
               child: Center(
                 child: submitting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
+                    ? const TapLoopProgressIndicator(color: Colors.white)
                     : Text(
                         'Enviar',
                         style: GoogleFonts.outfit(
@@ -2319,13 +2311,8 @@ class _NfcActivationPage extends StatelessWidget {
                               elevation: 0,
                             ),
                             child: activating
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2.5,
-                                    ),
+                                ? const TapLoopProgressIndicator(
+                                    color: Colors.white,
                                   )
                                 : Text(
                                     'Vincular con mi cuenta',

@@ -22,6 +22,7 @@ import '../../../core/widgets/taploop_button.dart';
 import '../../../core/widgets/empty_data_state.dart';
 import '../../../core/widgets/taploop_text_field.dart';
 import '../../../core/widgets/taploop_toast.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../analytics/models/team_member_model.dart';
 import '../../card/models/digital_card_model.dart';
 import '../../card/models/contact_item_model.dart';
@@ -914,7 +915,7 @@ class _AdminViewState extends State<AdminView> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: TapLoopProgressIndicator()));
     }
     final isDesktop = Responsive.isDesktop(context);
     final hPad = Responsive.isMobile(context) ? 20.0 : 32.0;
@@ -992,7 +993,6 @@ class _AdminViewState extends State<AdminView> {
                       onView: _viewMember,
                       onEdit: _editMember,
                       onToggle: _toggleMember,
-                      onInvite: _showInviteUnavailable,
                     ),
                   const SizedBox(height: 32),
                 ],
@@ -1661,9 +1661,7 @@ class _ConsistencyCard extends StatelessWidget {
         height: 236,
         padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
         decoration: BoxDecoration(
-          color: selected
-              ? AppColors.primary.withValues(alpha: 0.04)
-              : context.bgCard,
+          color: context.bgCard,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: selected ? AppColors.primary : context.borderStrongSoft,
@@ -1769,7 +1767,7 @@ class _SharedConfigurationSurface extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: context.bgSubtle.withValues(alpha: 0.45),
+        color: context.bgCard,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: context.borderStrongSoft, width: 1.1),
       ),
@@ -2559,7 +2557,6 @@ class _TeamProfilesPanel extends StatelessWidget {
   final void Function(_AdminMember) onView;
   final void Function(_AdminMember) onEdit;
   final void Function(_AdminMember, bool) onToggle;
-  final VoidCallback onInvite;
 
   const _TeamProfilesPanel({
     super.key,
@@ -2569,7 +2566,6 @@ class _TeamProfilesPanel extends StatelessWidget {
     required this.onView,
     required this.onEdit,
     required this.onToggle,
-    required this.onInvite,
   });
 
   @override
@@ -2632,28 +2628,6 @@ class _TeamProfilesPanel extends StatelessWidget {
                     value: inactiveCount,
                     label: 'Inactivos',
                     color: context.textSecondary,
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: onInvite,
-                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
-                    label: const Text('Invitar miembro'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      minimumSize: const Size(0, 56),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 28,
-                        vertical: 22,
-                      ),
-                      textStyle: GoogleFonts.dmSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
                   ),
                 ],
               );
@@ -5086,6 +5060,15 @@ class _AdminBottomStepNav extends StatelessWidget {
                     : () {
                         onSave();
                       },
+                icon: saving
+                    ? null
+                    : Icon(
+                        hasNext
+                            ? Icons.arrow_forward_rounded
+                            : Icons.save_outlined,
+                        size: 18,
+                      ),
+                animateIconOnHover: hasNext,
                 height: 44,
               ),
             ),

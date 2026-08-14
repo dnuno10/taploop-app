@@ -20,6 +20,7 @@ import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/taploop_button.dart';
 import '../../../core/widgets/taploop_motion.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/digital_card_model.dart';
 import '../models/social_link_model.dart';
@@ -1045,7 +1046,7 @@ class _EditCardViewState extends State<EditCardView>
         icon: Icons.palette_outlined,
         title: 'Diseño compartido activo',
         message:
-            'La configuración de diseño se gestiona desde Integraciones para toda la organización.',
+            'La configuración de diseño se gestiona desde Administración para toda la organización.',
       )
     else
       _DesignTab(
@@ -1060,7 +1061,7 @@ class _EditCardViewState extends State<EditCardView>
         icon: Icons.assignment_outlined,
         title: 'Formulario compartido activo',
         message:
-            'Los formularios se gestionan desde Integraciones y se aplican a todos los miembros de la organización.',
+            'Los formularios se gestionan desde Administración y se aplican a todos los miembros de la organización.',
       )
     else
       _FormulariosTab(
@@ -1075,10 +1076,10 @@ class _EditCardViewState extends State<EditCardView>
       ),
     if (_sharedIntegrationsLocked)
       const _OrganizationSharedLockTab(
-        icon: Icons.hub_outlined,
+        icon: Icons.admin_panel_settings_outlined,
         title: 'Integración compartida activa',
         message:
-            'Las integraciones se gestionan desde Integraciones y reemplazan la configuración individual.',
+            'Las integraciones se gestionan desde Administración y reemplazan la configuración individual.',
       )
     else
       _CalendarioTab(
@@ -1999,13 +2000,8 @@ class _AvatarPickerState extends State<_AvatarPicker> {
                   ? Image.network(photoUrl, fit: BoxFit.cover)
                   : Center(
                       child: _uploading
-                          ? SizedBox(
-                              width: 26,
-                              height: 26,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.6,
-                                color: AppColors.primary,
-                              ),
+                          ? const TapLoopProgressIndicator(
+                              color: AppColors.primary,
                             )
                           : Icon(
                               Icons.person_outline_rounded,
@@ -3544,29 +3540,7 @@ class _DesignTab extends StatelessWidget {
               },
             ),
             const SizedBox(height: 26),
-            _DesignSectionCard(
-              title: 'Estilo de perfil',
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children:
-                    const [
-                      CardProfileDesign.classic,
-                      CardProfileDesign.modern,
-                    ].map((design) {
-                      return _ProfileDesignChip(
-                        design: design,
-                        selected: card.profileDesign == design,
-                        onTap: () => onChanged(
-                          card.copyWith(
-                            profileDesign: design,
-                            layoutStyle: design.compatibleLayoutStyle,
-                          ),
-                        ),
-                      );
-                    }).toList(),
-              ),
-            ),
+            _ProfileDesignSection(card: card, onChanged: onChanged),
             const SizedBox(height: 22),
             Row(
               children: [
@@ -4391,6 +4365,87 @@ class _BgStyleChip extends StatelessWidget {
   }
 }
 
+class _ProfileDesignSection extends StatelessWidget {
+  final DigitalCardModel card;
+  final ValueChanged<DigitalCardModel> onChanged;
+
+  const _ProfileDesignSection({required this.card, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = const [CardProfileDesign.classic, CardProfileDesign.modern];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderStrongSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Estilo de perfil',
+            style: GoogleFonts.outfit(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: context.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Elige cómo se organizará la información de tu perfil',
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 680;
+              final chips = options.map((design) {
+                return _ProfileDesignChip(
+                  design: design,
+                  selected: card.profileDesign == design,
+                  onTap: () => onChanged(
+                    card.copyWith(
+                      profileDesign: design,
+                      layoutStyle: design.compatibleLayoutStyle,
+                    ),
+                  ),
+                );
+              }).toList();
+
+              if (stacked) {
+                return Column(
+                  children: [
+                    for (var i = 0; i < chips.length; i++) ...[
+                      chips[i],
+                      if (i != chips.length - 1) const SizedBox(height: 10),
+                    ],
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: chips[0]),
+                  const SizedBox(width: 12),
+                  Expanded(child: chips[1]),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ProfileDesignChip extends StatelessWidget {
   final CardProfileDesign design;
   final bool selected;
@@ -4405,18 +4460,17 @@ class _ProfileDesignChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = switch (design) {
       CardProfileDesign.classic => Icons.person_outline,
-      CardProfileDesign.modern => Icons.dashboard_customize_outlined,
+      CardProfileDesign.modern => Icons.grid_view_rounded,
     };
     final label = switch (design) {
       CardProfileDesign.classic => 'Clásico',
       CardProfileDesign.modern => 'Moderno',
     };
     final desc = switch (design) {
-      CardProfileDesign.classic => 'Logo, foto y datos centrados',
-      CardProfileDesign.modern => 'Acciones y enlaces más destacados',
+      CardProfileDesign.classic => 'Información centrada',
+      CardProfileDesign.modern => 'Acciones y contenido primero',
     };
-    final fgPrimary = selected ? AppColors.primary : context.textPrimary;
-    final fgSub = context.textSecondary;
+    final iconColor = context.textSecondary;
     var hovering = false;
     return StatefulBuilder(
       builder: (context, setHovering) {
@@ -4428,10 +4482,11 @@ class _ProfileDesignChip extends StatelessWidget {
             onTap: onTap,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              width: 220,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 86),
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
               decoration: BoxDecoration(
-                color: selected || hovering
+                color: hovering
                     ? TapLoopMotion.hoverSurfaceColor(context)
                     : context.bgCard,
                 borderRadius: BorderRadius.circular(14),
@@ -4441,39 +4496,67 @@ class _ProfileDesignChip extends StatelessWidget {
                       : hovering
                       ? context.borderStrongSoft.withValues(alpha: 0.9)
                       : context.borderStrongSoft,
-                  width: selected ? 1.6 : 1,
+                  width: selected ? 1.4 : 1,
                 ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.max,
+              child: Stack(
                 children: [
-                  Icon(icon, size: 20, color: fgPrimary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+                  Padding(
+                    padding: const EdgeInsets.only(right: 34),
+                    child: Row(
                       children: [
-                        Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: fgPrimary,
+                        Icon(icon, size: 30, color: iconColor),
+                        const SizedBox(width: 18),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  color: context.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                desc,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: context.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          desc,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.dmSans(fontSize: 12, color: fgSub),
                         ),
                       ],
                     ),
                   ),
+                  if (selected)
+                    Positioned(
+                      top: 8,
+                      right: 0,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primary,
+                        ),
+                        child: const Icon(
+                          Icons.check_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -4835,10 +4918,11 @@ class _ColorSlider extends StatelessWidget {
 
 // ─── Save Button ──────────────────────────────────────────────────────────────
 
-class _SaveButton extends StatelessWidget {
+class _SaveButton extends StatefulWidget {
   final bool unsaved;
   final bool saving;
   final Future<void> Function() onSave;
+
   const _SaveButton({
     required this.unsaved,
     required this.saving,
@@ -4846,58 +4930,101 @@ class _SaveButton extends StatelessWidget {
   });
 
   @override
+  State<_SaveButton> createState() => _SaveButtonState();
+}
+
+class _SaveButtonState extends State<_SaveButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: unsaved && !saving ? () => onSave() : null,
+    final enabled = widget.unsaved && !widget.saving;
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) {
+        if (enabled) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
         decoration: BoxDecoration(
-          color: saving
+          color: widget.saving
               ? AppColors.success.withValues(alpha: 0.1)
-              : unsaved
-              ? AppColors.primary
+              : widget.unsaved
+              ? null
               : context.bgSubtle,
+          gradient: widget.unsaved && !widget.saving
+              ? LinearGradient(
+                  colors: _hovered
+                      ? const [Color(0xFFFF6A2A), Color(0xFFFF9A52)]
+                      : const [Color(0xFFFF5A1F), Color(0xFFFF8A3D)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                )
+              : null,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: unsaved && !saving
-                ? AppColors.primary
+            color: widget.unsaved && !widget.saving
+                ? Colors.transparent
                 : context.borderStrongSoft,
           ),
+          boxShadow: enabled && _hovered
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.22),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
-        child: saving
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 13,
-                    height: 13,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.success,
-                    ),
+        child: GestureDetector(
+          onTap: enabled ? () => widget.onSave() : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            child: widget.saving
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const TapLoopProgressIndicator(color: AppColors.success),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Guardando...',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.unsaved) ...[
+                        const Icon(
+                          Icons.save_outlined,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        widget.unsaved ? 'Guardar cambios' : 'Guardado',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: widget.unsaved
+                              ? Colors.white
+                              : context.textMuted,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Guardando...',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.success,
-                    ),
-                  ),
-                ],
-              )
-            : Text(
-                unsaved ? 'Guardar cambios' : 'Guardado',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: unsaved
-                      ? (context.isDark ? Colors.black : Colors.white)
-                      : context.textMuted,
-                ),
-              ),
+          ),
+        ),
       ),
     );
   }
@@ -6250,7 +6377,7 @@ class _FormulariosTabState extends State<_FormulariosTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: TapLoopProgressIndicator());
     }
 
     final content = Center(
@@ -6336,14 +6463,9 @@ class _FormulariosTabState extends State<_FormulariosTab> {
                 width: 210,
                 child: TapLoopButton(
                   label: 'Guardar cambios',
-                  variant: TapLoopButtonVariant.outline,
                   height: 54,
                   borderRadius: 999,
-                  icon: const Icon(
-                    Icons.save_outlined,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
+                  icon: const Icon(Icons.save_outlined, size: 18),
                   onPressed: _loadForms,
                 ),
               ),
@@ -7046,14 +7168,9 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                 width: 210,
                 child: TapLoopButton(
                   label: 'Guardar cambios',
-                  variant: TapLoopButtonVariant.outline,
                   height: 54,
                   borderRadius: 999,
-                  icon: const Icon(
-                    Icons.save_outlined,
-                    size: 18,
-                    color: AppColors.primary,
-                  ),
+                  icon: const Icon(Icons.save_outlined, size: 18),
                   onPressed: _emitChanges,
                 ),
               ),

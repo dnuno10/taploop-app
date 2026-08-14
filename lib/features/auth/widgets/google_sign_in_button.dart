@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/theme/app_theme_extensions.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 
 class GoogleSignInButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -24,14 +25,7 @@ class GoogleSignInButton extends StatelessWidget {
           ),
         ),
         child: isLoading
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: context.textSecondary,
-                ),
-              )
+            ? TapLoopProgressIndicator(color: context.textSecondary)
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

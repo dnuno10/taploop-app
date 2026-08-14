@@ -9,6 +9,7 @@ import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/admin_repository.dart';
 import '../../../core/data/repositories/lead_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/lead_model.dart';
 import '../models/team_member_model.dart';
@@ -198,6 +199,7 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   String? _loadedCardId;
   String? _loadedOrgId;
   String? _selectedMemberId;
+  String? _selectedLeadId;
   final TextEditingController _searchCtrl = TextEditingController();
   String _search = '';
   String _statusFilter = 'all';
@@ -272,6 +274,9 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
       );
       final data = leadsByCard.values.expand((leads) => leads).toList()
         ..sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
+      final selectedLeadStillVisible = data.any(
+        (lead) => lead.id == _selectedLeadId,
+      );
       if (mounted) {
         setState(() {
           _loadedCardId = cardId;
@@ -279,6 +284,11 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
           _members = members;
           _selectedMemberId = selectedMemberId;
           _allLeads = data;
+          _selectedLeadId = selectedLeadStillVisible
+              ? _selectedLeadId
+              : data.isNotEmpty
+              ? data.first.id
+              : null;
           _loading = false;
         });
       }
@@ -342,7 +352,7 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
       if (mounted) {
         TapLoopToast.show(
           context,
-          'Lead marcado como venta correctamente.',
+          'Lead marcado como contactado.',
           TapLoopToastType.success,
         );
       }
@@ -429,74 +439,53 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
                 },
               ),
             ],
-            const SizedBox(height: 28),
-            if (isDesktop)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 360,
-                    child: Column(
-                      children: [
-                        _LeadSummaryPanel(
-                          total: _allLeads.length,
-                          newCount: newCount,
-                          contactedCount: convertedCount,
-                        ),
-                        const SizedBox(height: 22),
-                        _LeadFiltersPanel(
-                          statusFilter: _statusFilter,
-                          onStatusChanged: (value) =>
-                              setState(() => _statusFilter = value),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: _LeadInboxPanel(
-                      searchCtrl: _searchCtrl,
-                      search: _search,
-                      onSearchChanged: (v) => setState(() => _search = v),
-                      onClearSearch: () {
-                        _searchCtrl.clear();
-                        setState(() => _search = '');
-                      },
-                      statusFilter: _statusFilter,
-                      onStatusChanged: (value) =>
-                          setState(() => _statusFilter = value),
-                      leads: leads,
-                      totalCount: _allLeads.length,
-                      loading: _loading,
-                      onConverted: _markAsConverted,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 24),
+            _LeadCommandBar(
+              searchCtrl: _searchCtrl,
+              search: _search,
+              statusFilter: _statusFilter,
+              onSearchChanged: (v) => setState(() => _search = v),
+              onClearSearch: () {
+                _searchCtrl.clear();
+                setState(() => _search = '');
+              },
+              onStatusChanged: (value) => setState(() => _statusFilter = value),
+            ),
+            const SizedBox(height: 18),
+            _LeadMetricStrip(
+              total: _allLeads.length,
+              newCount: newCount,
+              contactedCount: convertedCount,
+            ),
+            const SizedBox(height: 22),
+            if (_loading)
+              const SizedBox(
+                height: 360,
+                child: Center(child: TapLoopProgressIndicator()),
               )
-            else ...[
-              _LeadSummaryPanel(
-                total: _allLeads.length,
-                newCount: newCount,
-                contactedCount: convertedCount,
-              ),
-              const SizedBox(height: 18),
-              _LeadInboxPanel(
-                searchCtrl: _searchCtrl,
-                search: _search,
-                onSearchChanged: (v) => setState(() => _search = v),
-                onClearSearch: () {
-                  _searchCtrl.clear();
-                  setState(() => _search = '');
-                },
-                statusFilter: _statusFilter,
-                onStatusChanged: (value) =>
-                    setState(() => _statusFilter = value),
+            else if (leads.isEmpty)
+              _LeadPanel(
+                child: SizedBox(
+                  height: 260,
+                  child: Center(
+                    child: Text(
+                      'No hay leads para este filtro todavía.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        color: context.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else
+              _LeadWorkspace(
                 leads: leads,
-                totalCount: _allLeads.length,
-                loading: _loading,
+                selectedLeadId: _selectedLeadId,
+                onSelectLead: (lead) =>
+                    setState(() => _selectedLeadId = lead.id),
                 onConverted: _markAsConverted,
               ),
-            ],
           ],
         ),
       ),
@@ -504,12 +493,121 @@ class _LeadIntelligenceViewState extends State<LeadIntelligenceView> {
   }
 }
 
-class _LeadSummaryPanel extends StatelessWidget {
+class _LeadCommandBar extends StatelessWidget {
+  final TextEditingController searchCtrl;
+  final String search;
+  final String statusFilter;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
+  final ValueChanged<String> onStatusChanged;
+
+  const _LeadCommandBar({
+    required this.searchCtrl,
+    required this.search,
+    required this.statusFilter,
+    required this.onSearchChanged,
+    required this.onClearSearch,
+    required this.onStatusChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final searchField = SizedBox(
+      width: 230,
+      height: 38,
+      child: TextField(
+        controller: searchCtrl,
+        onChanged: onSearchChanged,
+        inputFormatters: [LengthLimitingTextInputFormatter(200)],
+        maxLength: 200,
+        style: GoogleFonts.dmSans(fontSize: 13, color: context.textPrimary),
+        decoration: InputDecoration(
+          hintText: 'Buscar lead...',
+          hintStyle: GoogleFonts.dmSans(fontSize: 13, color: context.textMuted),
+          counterText: '',
+          isDense: true,
+          prefixIcon: Icon(Icons.search_rounded, color: context.textSecondary),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 40,
+            minHeight: 38,
+          ),
+          suffixIcon: search.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 17),
+                  onPressed: onClearSearch,
+                ),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 38,
+            minHeight: 38,
+          ),
+          filled: true,
+          fillColor: context.bgCard,
+          contentPadding: EdgeInsets.zero,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: context.borderStrongSoft),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: context.borderStrongSoft),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+          ),
+        ),
+      ),
+    );
+
+    return _LeadPanel(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tabs = _LeadStatusTabs(
+            value: statusFilter,
+            onChanged: onStatusChanged,
+          );
+          final tools = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              searchField,
+              const SizedBox(width: 12),
+              const _LeadToolbarButton(
+                icon: Icons.calendar_today_outlined,
+                label: 'Fechas',
+              ),
+              const SizedBox(width: 12),
+              const _LeadToolbarButton(
+                icon: Icons.filter_alt_outlined,
+                label: 'Todos los orígenes',
+              ),
+              const SizedBox(width: 12),
+              const _LeadToolbarButton(
+                icon: Icons.keyboard_arrow_down_rounded,
+                label: 'Ordenar por: Recientes',
+              ),
+            ],
+          );
+          if (constraints.maxWidth >= 1120) {
+            return Row(children: [tabs, const Spacer(), tools]);
+          }
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [tabs, const SizedBox(width: 28), tools]),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LeadMetricStrip extends StatelessWidget {
   final int total;
   final int newCount;
   final int contactedCount;
 
-  const _LeadSummaryPanel({
+  const _LeadMetricStrip({
     required this.total,
     required this.newCount,
     required this.contactedCount,
@@ -517,50 +615,195 @@ class _LeadSummaryPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 34,
+      runSpacing: 14,
+      children: [
+        _LeadMetricChip(
+          icon: Icons.assignment_ind_outlined,
+          value: total,
+          label: 'leads totales',
+          color: context.textSecondary,
+        ),
+        _LeadMetricChip(
+          icon: Icons.circle,
+          value: newCount,
+          label: 'nuevos',
+          color: AppColors.primary,
+        ),
+        _LeadMetricChip(
+          icon: Icons.circle,
+          value: contactedCount,
+          label: 'contactado',
+          color: AppColors.success,
+        ),
+      ],
+    );
+  }
+}
+
+class _LeadMetricChip extends StatelessWidget {
+  final IconData icon;
+  final int value;
+  final String label;
+  final Color color;
+
+  const _LeadMetricChip({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 10),
+        Text(
+          '$value',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: context.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LeadWorkspace extends StatelessWidget {
+  final List<LeadModel> leads;
+  final String? selectedLeadId;
+  final ValueChanged<LeadModel> onSelectLead;
+  final ValueChanged<LeadModel> onConverted;
+
+  const _LeadWorkspace({
+    required this.leads,
+    required this.selectedLeadId,
+    required this.onSelectLead,
+    required this.onConverted,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = leads.cast<LeadModel?>().firstWhere(
+      (lead) => lead?.id == selectedLeadId,
+      orElse: () => leads.first,
+    )!;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 980;
+        if (stacked) {
+          return Column(
+            children: [
+              _LeadListPanel(
+                leads: leads,
+                selectedLeadId: selected.id,
+                onSelectLead: onSelectLead,
+              ),
+              const SizedBox(height: 16),
+              _LeadDetailPanel(
+                lead: selected,
+                onConverted: () => onConverted(selected),
+              ),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 520,
+              child: _LeadListPanel(
+                leads: leads,
+                selectedLeadId: selected.id,
+                onSelectLead: onSelectLead,
+              ),
+            ),
+            const SizedBox(width: 18),
+            Expanded(
+              child: _LeadDetailPanel(
+                lead: selected,
+                onConverted: () => onConverted(selected),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _LeadListPanel extends StatelessWidget {
+  final List<LeadModel> leads;
+  final String selectedLeadId;
+  final ValueChanged<LeadModel> onSelectLead;
+
+  const _LeadListPanel({
+    required this.leads,
+    required this.selectedLeadId,
+    required this.onSelectLead,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return _LeadPanel(
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Resumen',
-            style: GoogleFonts.dmSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: context.textSecondary,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+            child: Text(
+              'Leads (${leads.length})',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: context.textPrimary,
+              ),
             ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            '$total',
-            style: GoogleFonts.outfit(
-              fontSize: 42,
-              fontWeight: FontWeight.w800,
-              color: context.textPrimary,
-              height: 0.95,
+          ...leads.asMap().entries.map((entry) {
+            final index = entry.key;
+            final lead = entry.value;
+            return _LeadListRow(
+              lead: lead,
+              selected: lead.id == selectedLeadId,
+              showDivider: index < leads.length - 1,
+              onTap: () => onSelectLead(lead),
+            );
+          }),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+            child: Row(
+              children: [
+                Expanded(child: Divider(color: context.borderStrongSoft)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text(
+                    'Fin de la lista',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      color: context.textMuted,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: context.borderStrongSoft)),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Leads totales',
-            style: GoogleFonts.dmSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: context.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Divider(color: context.borderStrongSoft, height: 1),
-          const SizedBox(height: 20),
-          _LeadSummaryRow(
-            label: 'Nuevo',
-            value: newCount,
-            color: AppColors.primary,
-          ),
-          const SizedBox(height: 18),
-          _LeadSummaryRow(
-            label: 'Contactado',
-            value: contactedCount,
-            color: AppColors.success,
           ),
         ],
       ),
@@ -568,41 +811,602 @@ class _LeadSummaryPanel extends StatelessWidget {
   }
 }
 
-class _LeadSummaryRow extends StatelessWidget {
-  final String label;
-  final int value;
-  final Color color;
+class _LeadListRow extends StatefulWidget {
+  final LeadModel lead;
+  final bool selected;
+  final bool showDivider;
+  final VoidCallback onTap;
 
-  const _LeadSummaryRow({
+  const _LeadListRow({
+    required this.lead,
+    required this.selected,
+    required this.showDivider,
+    required this.onTap,
+  });
+
+  @override
+  State<_LeadListRow> createState() => _LeadListRowState();
+}
+
+class _LeadListRowState extends State<_LeadListRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final lead = widget.lead;
+    final selected = widget.selected;
+    final email = _leadFormValue(lead, 'email');
+    final phone = _leadFormValue(lead, 'phone');
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            gradient: selected
+                ? LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.08),
+                      AppColors.primaryLight.withValues(alpha: 0.035),
+                      AppColors.primary.withValues(alpha: 0.015),
+                    ],
+                  )
+                : null,
+            color: selected
+                ? null
+                : _hovered
+                ? context.bgSubtle.withValues(alpha: 0.72)
+                : context.bgCard,
+            border: Border(
+              left: BorderSide(
+                color: selected ? AppColors.primary : Colors.transparent,
+                width: 4,
+              ),
+              top: selected
+                  ? BorderSide(color: AppColors.primary.withValues(alpha: 0.18))
+                  : BorderSide.none,
+              right: selected
+                  ? BorderSide(color: AppColors.primary.withValues(alpha: 0.18))
+                  : BorderSide.none,
+              bottom: widget.showDivider
+                  ? BorderSide(
+                      color: selected
+                          ? AppColors.primary.withValues(alpha: 0.18)
+                          : context.borderStrongSoft,
+                    )
+                  : BorderSide.none,
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+          child: Row(
+            children: [
+              _LeadListAvatar(lead: lead),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lead.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      lead.company?.trim().isNotEmpty == true
+                          ? lead.company!
+                          : 'Empresa no disponible',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        if (email != null)
+                          _LeadMiniFact(icon: Icons.mail_outline, label: email),
+                        if (phone != null)
+                          _LeadMiniFact(
+                            icon: Icons.phone_outlined,
+                            label: phone,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _LeadStatusPill(contacted: lead.isConverted),
+                  const SizedBox(height: 12),
+                  Text(
+                    _fmtDay(lead.lastSeen),
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: context.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Ver info',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LeadDetailPanel extends StatefulWidget {
+  final LeadModel lead;
+  final VoidCallback onConverted;
+
+  const _LeadDetailPanel({required this.lead, required this.onConverted});
+
+  @override
+  State<_LeadDetailPanel> createState() => _LeadDetailPanelState();
+}
+
+class _LeadDetailPanelState extends State<_LeadDetailPanel> {
+  bool _showAllTimeline = false;
+
+  @override
+  void didUpdateWidget(covariant _LeadDetailPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lead.id != widget.lead.id) _showAllTimeline = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lead = widget.lead;
+    final email = _leadFormValue(lead, 'email');
+    final phone = _leadFormValue(lead, 'phone');
+    final timeline = _buildTimeline(lead);
+    final visibleTimeline = _showAllTimeline
+        ? timeline
+        : timeline.take(6).toList();
+    final hasMoreTimeline = timeline.length > 6;
+
+    return _LeadPanel(
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _LeadAvatar(lead: lead),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lead.displayName,
+                      style: GoogleFonts.outfit(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: context.textPrimary,
+                        height: 1.05,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      lead.company?.trim().isNotEmpty == true
+                          ? lead.company!
+                          : 'Empresa no disponible',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: context.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 14,
+                      runSpacing: 8,
+                      children: [
+                        if (email != null)
+                          _LeadMiniFact(icon: Icons.mail_outline, label: email),
+                        if (phone != null)
+                          _LeadMiniFact(
+                            icon: Icons.phone_outlined,
+                            label: phone,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 18),
+              _LeadDetailActions(lead: lead, onConverted: widget.onConverted),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Wrap(
+            spacing: 18,
+            runSpacing: 10,
+            children: [
+              _LeadDetailFact(
+                icon: Icons.schedule_rounded,
+                label: 'Estado:',
+                value: lead.isConverted ? 'Contactado' : 'Pendiente',
+              ),
+              _LeadDetailFact(
+                icon: Icons.link_rounded,
+                label: 'Origen:',
+                value: _leadSourceLabel(lead),
+              ),
+              _LeadDetailFact(
+                icon: Icons.calendar_today_outlined,
+                label: 'Capturado:',
+                value: _fmtDay(lead.firstSeen),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Divider(color: context.borderStrongSoft, height: 1),
+          const SizedBox(height: 22),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final sideBySide = constraints.maxWidth >= 720;
+              final timelineColumn = _LeadActivityColumn(
+                lead: lead,
+                timeline: visibleTimeline,
+                showAllTimeline: _showAllTimeline,
+                hasMoreTimeline: hasMoreTimeline,
+                onToggleTimeline: () =>
+                    setState(() => _showAllTimeline = !_showAllTimeline),
+              );
+              final info = _LeadInfoPanel(lead: lead);
+              if (!sideBySide) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [timelineColumn, const SizedBox(height: 18), info],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 6, child: timelineColumn),
+                  const SizedBox(width: 24),
+                  SizedBox(width: 270, child: info),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadDetailActions extends StatelessWidget {
+  final LeadModel lead;
+  final VoidCallback onConverted;
+
+  const _LeadDetailActions({required this.lead, required this.onConverted});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 210,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (lead.formData != null && lead.formData!.isNotEmpty) ...[
+            _LeadOutlineAction(
+              icon: Icons.open_in_new_rounded,
+              label: 'Ver info',
+              child: _FormEventButton(
+                formData: lead.formData!,
+                formType: lead.formType,
+                label: 'Ver info',
+                primaryStyle: true,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          _LeadOutlineAction(
+            icon: Icons.check_circle_outline_rounded,
+            label: lead.isConverted ? 'Contactado' : 'Marcar contactado',
+            onTap: lead.isConverted ? null : onConverted,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadOutlineAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final Widget? child;
+
+  const _LeadOutlineAction({
+    required this.icon,
     required this.label,
-    required this.value,
-    required this.color,
+    this.onTap,
+    this.child,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final content = Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 15, color: context.textSecondary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.visible,
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: context.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (child != null) return child!;
+    return MouseRegion(
+      cursor: onTap == null
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
+      child: GestureDetector(onTap: onTap, child: content),
+    );
+  }
+}
+
+class _LeadActivityColumn extends StatelessWidget {
+  final LeadModel lead;
+  final List<_TimelineEvent> timeline;
+  final bool showAllTimeline;
+  final bool hasMoreTimeline;
+  final VoidCallback onToggleTimeline;
+
+  const _LeadActivityColumn({
+    required this.lead,
+    required this.timeline,
+    required this.showAllTimeline,
+    required this.hasMoreTimeline,
+    required this.onToggleTimeline,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        Text(
+          'Actividad reciente',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+          ),
         ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(
-            label,
-            style: GoogleFonts.dmSans(
+        const SizedBox(height: 18),
+        ...timeline.asMap().entries.map((entry) {
+          final i = entry.key;
+          return _TimelineEventRow(
+            event: entry.value,
+            isLast: i == timeline.length - 1,
+            formData: lead.formData,
+            formType: lead.formType,
+          );
+        }),
+        if (hasMoreTimeline) ...[
+          const SizedBox(height: 8),
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: onToggleTimeline,
+              child: Text(
+                showAllTimeline ? 'Ver menos' : 'Ver todos los eventos',
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _LeadInfoPanel extends StatelessWidget {
+  final LeadModel lead;
+
+  const _LeadInfoPanel({required this.lead});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: context.bgCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.borderStrongSoft, width: 1.1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Información del lead',
+            style: GoogleFonts.outfit(
               fontSize: 15,
               fontWeight: FontWeight.w800,
               color: context.textPrimary,
             ),
           ),
-        ),
+          const SizedBox(height: 18),
+          _LeadInfoRow(
+            icon: Icons.schedule_rounded,
+            label: 'Estado',
+            value: lead.isConverted ? 'Contactado' : 'Pendiente',
+            pill: true,
+          ),
+          _LeadInfoRow(
+            icon: Icons.link_rounded,
+            label: 'Origen',
+            value: _leadSourceLabel(lead),
+          ),
+          _LeadInfoRow(
+            icon: Icons.alarm_rounded,
+            label: 'Última actividad',
+            value: '${_fmtDay(lead.lastSeen)}, ${_fmt(lead.lastSeen)}',
+          ),
+          _LeadInfoRow(
+            icon: Icons.calendar_today_outlined,
+            label: 'Capturado',
+            value: '${_fmtDay(lead.firstSeen)}, ${_fmt(lead.firstSeen)}',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool pill;
+
+  const _LeadInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.pill = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: context.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: context.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          pill
+              ? _LeadStatusPill(contacted: value == 'Contactado')
+              : Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.right,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadDetailFact extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _LeadDetailFact({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: context.textSecondary),
+        const SizedBox(width: 7),
         Text(
-          '$value',
+          label,
           style: GoogleFonts.dmSans(
-            fontSize: 14,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: context.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          value,
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
             fontWeight: FontWeight.w800,
             color: context.textPrimary,
           ),
@@ -612,319 +1416,106 @@ class _LeadSummaryRow extends StatelessWidget {
   }
 }
 
-class _LeadFiltersPanel extends StatelessWidget {
-  final String statusFilter;
-  final ValueChanged<String> onStatusChanged;
-
-  const _LeadFiltersPanel({
-    required this.statusFilter,
-    required this.onStatusChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _LeadPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Filtros',
-            style: GoogleFonts.dmSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: context.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Estado',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: context.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _LeadFilterSelect(
-            icon: Icons.filter_alt_outlined,
-            label: switch (statusFilter) {
-              'new' => 'Nuevo',
-              'contacted' => 'Contactado',
-              _ => 'Todos los estados',
-            },
-            onTap: () => onStatusChanged(
-              statusFilter == 'all'
-                  ? 'new'
-                  : statusFilter == 'new'
-                  ? 'contacted'
-                  : 'all',
-            ),
-          ),
-          const SizedBox(height: 22),
-          Text(
-            'Origen',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: context.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _LeadFilterSelect(
-            icon: Icons.hub_outlined,
-            label: 'Todos los orígenes',
-            onTap: () {},
-          ),
-          const SizedBox(height: 24),
-          Divider(color: context.borderStrongSoft, height: 1),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => onStatusChanged('all'),
-              icon: const Icon(Icons.refresh_rounded, size: 17),
-              label: const Text('Limpiar filtros'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: context.textPrimary,
-                side: BorderSide(color: context.borderStrongSoft),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                textStyle: GoogleFonts.dmSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LeadFilterSelect extends StatelessWidget {
+class _LeadMiniFact extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
 
-  const _LeadFilterSelect({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _LeadMiniFact({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          height: 58,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: context.bgCard,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.primary, width: 1.2),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: context.textSecondary),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: context.textSecondary,
           ),
-          child: Row(
-            children: [
-              Icon(icon, color: AppColors.primary, size: 20),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: context.textPrimary,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: context.textSecondary,
-              ),
-            ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LeadStatusPill extends StatelessWidget {
+  final bool contacted;
+
+  const _LeadStatusPill({required this.contacted});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = contacted ? AppColors.success : const Color(0xFF64748B);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: contacted ? color.withValues(alpha: 0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: contacted
+              ? color.withValues(alpha: 0.14)
+              : const Color(0xFFD8DEE8),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            contacted ? Icons.check_circle_outline : Icons.schedule_rounded,
+            size: 12,
+            color: color,
           ),
+          const SizedBox(width: 5),
+          Text(
+            contacted ? 'Contactado' : 'Pendiente',
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeadListAvatar extends StatelessWidget {
+  final LeadModel lead;
+
+  const _LeadListAvatar({required this.lead});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        shape: BoxShape.circle,
+        border: Border.all(color: context.borderStrongSoft),
+      ),
+      child: Text(
+        _leadInitials(lead),
+        style: GoogleFonts.outfit(
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+          color: context.textPrimary,
         ),
       ),
     );
   }
 }
 
-class _LeadInboxPanel extends StatelessWidget {
-  final TextEditingController searchCtrl;
-  final String search;
-  final ValueChanged<String> onSearchChanged;
-  final VoidCallback onClearSearch;
-  final String statusFilter;
-  final ValueChanged<String> onStatusChanged;
-  final List<LeadModel> leads;
-  final int totalCount;
-  final bool loading;
-  final ValueChanged<LeadModel> onConverted;
-
-  const _LeadInboxPanel({
-    required this.searchCtrl,
-    required this.search,
-    required this.onSearchChanged,
-    required this.onClearSearch,
-    required this.statusFilter,
-    required this.onStatusChanged,
-    required this.leads,
-    required this.totalCount,
-    required this.loading,
-    required this.onConverted,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final searchField = TextField(
-      controller: searchCtrl,
-      onChanged: onSearchChanged,
-      inputFormatters: [LengthLimitingTextInputFormatter(200)],
-      maxLength: 200,
-      style: GoogleFonts.dmSans(fontSize: 14, color: context.textPrimary),
-      decoration: InputDecoration(
-        hintText: 'Buscar leads...',
-        hintStyle: GoogleFonts.dmSans(color: context.textMuted),
-        counterText: '',
-        prefixIcon: Icon(Icons.search_rounded, color: context.textPrimary),
-        suffixIcon: search.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close_rounded, size: 18),
-                onPressed: onClearSearch,
-              ),
-        filled: true,
-        fillColor: context.bgCard,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: context.borderStrongSoft),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: context.borderStrongSoft),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.3),
-        ),
-      ),
-    );
-
-    return _LeadPanel(
-      padding: const EdgeInsets.fromLTRB(28, 26, 28, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 720;
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    searchField,
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: _LeadToolbarButton(
-                            icon: Icons.calendar_today_outlined,
-                            label: 'Fechas',
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        _LeadIconButton(icon: Icons.tune_rounded),
-                      ],
-                    ),
-                  ],
-                );
-              }
-
-              return Row(
-                children: [
-                  const Spacer(),
-                  SizedBox(width: 360, child: searchField),
-                  const SizedBox(width: 14),
-                  const _LeadToolbarButton(
-                    icon: Icons.calendar_today_outlined,
-                    label: 'Fechas',
-                  ),
-                  const SizedBox(width: 10),
-                  _LeadIconButton(icon: Icons.tune_rounded),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              _LeadStatusTabs(value: statusFilter, onChanged: onStatusChanged),
-              const Spacer(),
-              Text(
-                'Ordenar por: ',
-                style: GoogleFonts.dmSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: context.textSecondary,
-                ),
-              ),
-              Text(
-                'Recientes',
-                style: GoogleFonts.dmSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: context.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 18),
-              Text(
-                '$totalCount total',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: context.textMuted,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          if (loading)
-            const SizedBox(
-              height: 260,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (leads.isEmpty)
-            SizedBox(
-              height: 260,
-              child: Center(
-                child: Text(
-                  'No hay leads para este filtro todavía.',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 14,
-                    color: context.textMuted,
-                  ),
-                ),
-              ),
-            )
-          else
-            ...leads.asMap().entries.map(
-              (entry) => _LeadTimelineCard(
-                lead: entry.value,
-                showDivider: false,
-                onConverted: () => onConverted(entry.value),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+String _leadSourceLabel(LeadModel lead) {
+  final source = lead.formType?.trim();
+  if (source != null && source.isNotEmpty) return _formTitle(source);
+  return 'link público';
 }
 
 class _LeadStatusTabs extends StatelessWidget {
@@ -990,7 +1581,7 @@ class _LeadStatusTab extends StatelessWidget {
                 color: selected ? AppColors.primary : context.textPrimary,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 9),
             Container(
               width: 54,
               height: 3,
@@ -1015,47 +1606,28 @@ class _LeadToolbarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: context.bgCard,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: context.borderStrongSoft, width: 1.1),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label,
             style: GoogleFonts.dmSans(
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: context.textPrimary,
             ),
           ),
           const SizedBox(width: 10),
-          Icon(icon, size: 18, color: context.textSecondary),
+          Icon(icon, size: 16, color: context.textSecondary),
         ],
       ),
-    );
-  }
-}
-
-class _LeadIconButton extends StatelessWidget {
-  final IconData icon;
-
-  const _LeadIconButton({required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: context.bgCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderStrongSoft, width: 1.1),
-      ),
-      child: Icon(icon, color: context.textSecondary),
     );
   }
 }
@@ -1227,10 +1799,10 @@ class _LeadContactButton extends StatelessWidget {
     final color = contacted ? AppColors.success : const Color(0xFF64748B);
     final bgColor = contacted
         ? AppColors.success.withValues(alpha: 0.1)
-        : const Color(0xFFF3F5F8);
+        : Colors.transparent;
     final borderColor = contacted
         ? AppColors.success.withValues(alpha: 0.22)
-        : context.borderStrongSoft;
+        : const Color(0xFFD8DEE8);
 
     return MouseRegion(
       cursor: contacted ? SystemMouseCursors.basic : SystemMouseCursors.click,
@@ -1592,11 +2164,13 @@ class _FormEventButton extends StatelessWidget {
   final Map<String, dynamic> formData;
   final String? formType;
   final String label;
+  final bool primaryStyle;
 
   const _FormEventButton({
     required this.formData,
     this.formType,
     this.label = 'Ver formulario',
+    this.primaryStyle = false,
   });
 
   Future<void> _launch(BuildContext context, String url) async {
@@ -1938,6 +2512,13 @@ class _FormEventButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (primaryStyle) {
+      return _BlueGradientActionButton(
+        label: label,
+        onTap: () => _show(context),
+      );
+    }
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -1968,6 +2549,100 @@ class _FormEventButton extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BlueGradientActionButton extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _BlueGradientActionButton({required this.label, required this.onTap});
+
+  @override
+  State<_BlueGradientActionButton> createState() =>
+      _BlueGradientActionButtonState();
+}
+
+class _BlueGradientActionButtonState extends State<_BlueGradientActionButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final gradient = LinearGradient(
+      colors: _hovered
+          ? const [Color(0xFF1D4ED8), Color(0xFF3B82F6)]
+          : const [Color(0xFF1749D6), Color(0xFF2563EB)],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) {
+        setState(() {
+          _hovered = false;
+          _pressed = false;
+        });
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed
+              ? 0.985
+              : _hovered
+              ? 1.002
+              : 1,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            height: 42,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            decoration: BoxDecoration(
+              gradient: gradient,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: _hovered
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF2563EB).withValues(alpha: 0.22),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.assignment_outlined,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.label,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

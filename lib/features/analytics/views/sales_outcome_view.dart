@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/data/app_state.dart';
 import '../../../core/data/repositories/lead_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/lead_model.dart';
 
@@ -146,9 +147,7 @@ class _SalesOutcomeViewState extends State<SalesOutcomeView> {
     if (_loading) {
       return const CustomScrollView(
         slivers: [
-          SliverFillRemaining(
-            child: Center(child: CircularProgressIndicator()),
-          ),
+          SliverFillRemaining(child: Center(child: TapLoopProgressIndicator())),
         ],
       );
     }
@@ -532,14 +531,7 @@ class _SaleToggleButton extends StatelessWidget {
             width: 118,
             child: Center(
               child: isUpdating
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: color,
-                      ),
-                    )
+                  ? TapLoopProgressIndicator(color: color)
                   : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

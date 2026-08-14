@@ -15,6 +15,7 @@ import '../../../core/data/repositories/analytics_repository.dart';
 import '../../../core/services/metrics_realtime_service.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/empty_data_state.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../../analytics/models/analytics_summary_model.dart';
 import '../../analytics/models/team_member_model.dart';
@@ -507,7 +508,7 @@ class _AnalyticsDashboardViewState extends State<AnalyticsDashboardView> {
                             ? const SizedBox(
                                 height: 300,
                                 child: Center(
-                                  child: CircularProgressIndicator(),
+                                  child: TapLoopProgressIndicator(),
                                 ),
                               )
                             : analytics == null ||

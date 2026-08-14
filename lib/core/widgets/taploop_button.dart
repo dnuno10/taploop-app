@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme_extensions.dart';
 import 'taploop_motion.dart';
+import 'taploop_progress_indicator.dart';
 
 enum TapLoopButtonVariant { primary, secondary, outline, text }
 
@@ -56,14 +57,7 @@ class _TapLoopButtonState extends State<TapLoopButton> {
         ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: _loadingColor(context),
-                ),
-              ),
+              TapLoopProgressIndicator(color: _loadingColor(context)),
               if (widget.loadingLabel != null) ...[
                 const SizedBox(width: 10),
                 Text(
@@ -157,13 +151,34 @@ class _TapLoopButtonState extends State<TapLoopButton> {
     final radius = BorderRadius.circular(widget.borderRadius);
     final enabled = widget.onPressed != null && !widget.isLoading;
     final visuallyDisabled = widget.visuallyDisabled && !widget.isLoading;
+    final fallbackGradient = widget.variant == TapLoopButtonVariant.primary
+        ? (_hovered && enabled && !visuallyDisabled
+              ? const LinearGradient(
+                  colors: [Color(0xFFFF6A2A), Color(0xFFFF9A52)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                )
+              : const LinearGradient(
+                  colors: [Color(0xFFFF5A1F), Color(0xFFFF8A3D)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ))
+        : widget.gradient;
+    final fallbackDisabledGradient =
+        widget.variant == TapLoopButtonVariant.primary
+        ? const LinearGradient(
+            colors: [Color(0xFFFFF0E8), Color(0xFFFFE2D3)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          )
+        : widget.disabledGradient;
     final showDisabledStyle =
         (visuallyDisabled || !enabled) &&
         !widget.isLoading &&
-        widget.disabledGradient != null;
+        fallbackDisabledGradient != null;
     final displayGradient = showDisabledStyle
-        ? widget.disabledGradient
-        : widget.gradient;
+        ? fallbackDisabledGradient
+        : fallbackGradient;
 
     return Opacity(
       opacity: widget.isLoading || enabled || showDisabledStyle ? 1 : 0.65,
@@ -173,6 +188,15 @@ class _TapLoopButtonState extends State<TapLoopButton> {
         decoration: BoxDecoration(
           gradient: displayGradient,
           borderRadius: radius,
+          boxShadow: enabled && _hovered && !visuallyDisabled
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.22),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: ElevatedButton(
           onPressed: enabled ? widget.onPressed : null,
@@ -202,34 +226,7 @@ class _TapLoopButtonState extends State<TapLoopButton> {
   Widget _buildButton(BuildContext context, Widget child) {
     switch (widget.variant) {
       case TapLoopButtonVariant.primary:
-        return ElevatedButton(
-          onPressed: widget.isLoading ? null : widget.onPressed,
-          style:
-              ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(widget.borderRadius),
-                ),
-                elevation: 0,
-              ).copyWith(
-                mouseCursor: WidgetStatePropertyAll(
-                  widget.onPressed == null || widget.isLoading
-                      ? SystemMouseCursors.basic
-                      : SystemMouseCursors.click,
-                ),
-                backgroundColor: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.disabled)) {
-                    return AppColors.primary.withValues(alpha: 0.48);
-                  }
-                  return AppColors.primary;
-                }),
-                overlayColor: WidgetStatePropertyAll(
-                  Colors.white.withValues(alpha: 0.04),
-                ),
-              ),
-          child: child,
-        );
+        return _buildGradientButton(context, child);
       case TapLoopButtonVariant.secondary:
         return ElevatedButton(
           onPressed: widget.isLoading ? null : widget.onPressed,
@@ -319,6 +316,9 @@ class _TapLoopButtonState extends State<TapLoopButton> {
         !widget.isLoading;
     if (disabled && widget.disabledTextColor != null) {
       return widget.disabledTextColor!;
+    }
+    if (disabled && widget.variant == TapLoopButtonVariant.primary) {
+      return const Color(0xFFD96A3A);
     }
 
     switch (widget.variant) {

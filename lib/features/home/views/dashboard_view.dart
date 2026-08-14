@@ -15,6 +15,7 @@ import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/empty_data_state.dart';
 import '../../../core/widgets/taploop_motion.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../analytics/models/analytics_summary_model.dart';
 import '../../analytics/models/lead_model.dart';
 import '../../analytics/models/link_stat_model.dart';
@@ -141,13 +142,8 @@ class _DashboardViewState extends State<DashboardView> {
       body: SafeArea(
         child: _loading || isResolvingCard
             ? Center(
-                child: SizedBox(
-                  width: 26,
-                  height: 26,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.4,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                child: TapLoopProgressIndicator(
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               )
             : LayoutBuilder(
@@ -531,7 +527,7 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
-class _HeaderButton extends StatelessWidget {
+class _HeaderButton extends StatefulWidget {
   final String label;
   final IconData icon;
   final bool filled;
@@ -545,40 +541,77 @@ class _HeaderButton extends StatelessWidget {
   });
 
   @override
+  State<_HeaderButton> createState() => _HeaderButtonState();
+}
+
+class _HeaderButtonState extends State<_HeaderButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return TapLoopPressable(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      hoverColor: filled
-          ? Colors.white.withValues(alpha: 0.04)
-          : TapLoopMotion.hoverSurfaceColor(context),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        decoration: BoxDecoration(
-          color: filled ? AppColors.primary : _panelSurfaceColor(context),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: filled ? AppColors.primary : context.borderStrongSoft,
+    final radius = BorderRadius.circular(18);
+    final filledGradient = LinearGradient(
+      colors: widget.filled
+          ? _hovered
+                ? const [Color(0xFFFF6A2A), Color(0xFFFF9A52)]
+                : const [Color(0xFFFF5A1F), Color(0xFFFF8A3D)]
+          : const [Colors.transparent, Colors.transparent],
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: TapLoopPressable(
+        onTap: widget.onTap,
+        borderRadius: radius,
+        hoverColor: widget.filled
+            ? Colors.transparent
+            : TapLoopMotion.hoverSurfaceColor(context),
+        child: AnimatedContainer(
+          duration: TapLoopMotion.normal,
+          curve: TapLoopMotion.standard,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            color: widget.filled ? null : _panelSurfaceColor(context),
+            gradient: widget.filled ? filledGradient : null,
+            borderRadius: radius,
+            border: Border.all(
+              color: widget.filled
+                  ? Colors.transparent
+                  : context.borderStrongSoft,
+            ),
+            boxShadow: widget.filled && _hovered
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.2),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ]
+                : null,
           ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 17,
-              color: filled ? Colors.white : const Color(0xFF334155),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.dmSans(
-                color: filled ? Colors.white : const Color(0xFF334155),
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                widget.icon,
+                size: 17,
+                color: widget.filled ? Colors.white : const Color(0xFF334155),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Text(
+                widget.label,
+                style: GoogleFonts.dmSans(
+                  color: widget.filled ? Colors.white : const Color(0xFF334155),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme_extensions.dart';
 import '../widgets/auth_layout.dart';
 import '../../../core/widgets/taploop_logo.dart';
 import '../../../core/widgets/taploop_button.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import 'login_view.dart';
 
 class VerifyEmailView extends StatefulWidget {
@@ -197,14 +198,7 @@ class _VerifyEmailViewState extends State<VerifyEmailView> {
                     ),
                   )
                 : _resendLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.primary,
-                    ),
-                  )
+                ? const TapLoopProgressIndicator(color: AppColors.primary)
                 : GestureDetector(
                     onTap: _onResend,
                     child: Text(

@@ -53,11 +53,12 @@ class AdminRepository {
 
     final cards = await _db
         .from('digital_cards')
-        .select('id, user_id')
+        .select('id, user_id, profile_photo_url')
         .inFilter('user_id', userIds);
 
     final cardRows = (cards as List).cast<Map<String, dynamic>>();
     final cardsByUser = <String, List<String>>{};
+    final profilePhotosByUser = <String, String>{};
     final allCardIds = <String>[];
 
     for (final row in cardRows) {
@@ -65,6 +66,12 @@ class AdminRepository {
       final userId = row['user_id'] as String?;
       if (cardId == null || userId == null) continue;
       cardsByUser.putIfAbsent(userId, () => []).add(cardId);
+      final profilePhotoUrl = (row['profile_photo_url'] as String?)?.trim();
+      if (profilePhotoUrl != null &&
+          profilePhotoUrl.isNotEmpty &&
+          !profilePhotosByUser.containsKey(userId)) {
+        profilePhotosByUser[userId] = profilePhotoUrl;
+      }
       allCardIds.add(cardId);
     }
 
@@ -231,7 +238,8 @@ class AdminRepository {
         email: userJson['email'] as String? ?? '',
         jobTitle: userJson['job_title'] as String? ?? '',
         role: userJson['role'] as String? ?? 'default',
-        avatarUrl: userJson['photo_url'] as String?,
+        avatarUrl:
+            profilePhotosByUser[userId] ?? userJson['photo_url'] as String?,
         taps: taps,
         qrScans: qrScans,
         leads: leads,

@@ -14,6 +14,7 @@ import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/taploop_loading_view.dart';
 import '../../../core/widgets/taploop_logo.dart';
 import '../../../core/widgets/taploop_motion.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../../admin/views/admin_view.dart';
 import '../../analytics/views/analytics_dashboard_view.dart';
@@ -183,9 +184,9 @@ class _HomeShellState extends State<HomeShell> {
       label: 'Equipo',
     ),
     _NavItem(
-      icon: Icons.hub_outlined,
-      activeIcon: Icons.hub_rounded,
-      label: 'Integraciones',
+      icon: Icons.admin_panel_settings_outlined,
+      activeIcon: Icons.admin_panel_settings_rounded,
+      label: 'Administración',
     ),
     _NavItem(
       icon: Icons.settings_outlined,
@@ -922,14 +923,7 @@ class _MobileCardToolbar extends StatelessWidget {
               disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
             ),
             icon: creatingCard
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
+                ? const TapLoopProgressIndicator(color: Colors.white)
                 : const Icon(Icons.add_card_rounded, size: 18),
           ),
         ],

@@ -12,6 +12,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_theme_extensions.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/widgets/empty_data_state.dart';
+import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../models/lead_model.dart';
 import '../models/team_member_model.dart';
 import '../models/visit_event_model.dart';
@@ -222,7 +223,7 @@ class _TeamPerformanceViewState extends State<TeamPerformanceView> {
             ),
             if (_loading)
               const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: TapLoopProgressIndicator()),
               )
             else if (_members.isEmpty)
               const SliverFillRemaining(
