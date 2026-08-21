@@ -480,23 +480,28 @@ class _TeamDirectoryPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 28),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 820),
-              child: Column(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 720;
+              return Column(
                 children: [
-                  const _TeamDirectoryHeader(),
-                  Divider(color: context.borderStrongSoft, height: 28),
+                  if (!compact) const _TeamDirectoryHeader(),
+                  if (!compact)
+                    Divider(color: context.borderStrongSoft, height: 28),
                   ...members.map(
-                    (member) => _TeamDirectoryRow(
-                      member: member,
-                      lastActivity: lastActivityByMemberId[member.id],
-                    ),
+                    (member) => compact
+                        ? _TeamDirectoryCompactRow(
+                            member: member,
+                            lastActivity: lastActivityByMemberId[member.id],
+                          )
+                        : _TeamDirectoryRow(
+                            member: member,
+                            lastActivity: lastActivityByMemberId[member.id],
+                          ),
                   ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -516,12 +521,12 @@ class _TeamDirectoryHeader extends StatelessWidget {
     );
     return Row(
       children: [
-        SizedBox(width: 300, child: Text('Miembro', style: style)),
-        SizedBox(width: 96, child: Text('Rol', style: style)),
-        SizedBox(width: 82, child: Text('Perfiles', style: style)),
-        SizedBox(width: 82, child: Text('Tarjetas', style: style)),
-        SizedBox(width: 150, child: Text('Última actividad', style: style)),
-        SizedBox(width: 110, child: Text('Estado', style: style)),
+        Expanded(flex: 34, child: Text('Miembro', style: style)),
+        Expanded(flex: 13, child: Text('Rol', style: style)),
+        Expanded(flex: 11, child: Text('Perfiles', style: style)),
+        Expanded(flex: 11, child: Text('Tarjetas', style: style)),
+        Expanded(flex: 18, child: Text('Última actividad', style: style)),
+        Expanded(flex: 13, child: Text('Estado', style: style)),
       ],
     );
   }
@@ -539,8 +544,8 @@ class _TeamDirectoryRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          SizedBox(
-            width: 300,
+          Expanded(
+            flex: 34,
             child: Row(
               children: [
                 _TeamMemberAvatar(member: member, size: 46),
@@ -582,27 +587,27 @@ class _TeamDirectoryRow extends StatelessWidget {
               ],
             ),
           ),
-          SizedBox(
-            width: 96,
+          Expanded(
+            flex: 13,
             child: Text(_roleLabel(member), style: _rowStyle(context)),
           ),
-          SizedBox(
-            width: 82,
+          Expanded(
+            flex: 11,
             child: Text('${member.cardIds.length}', style: _rowStyle(context)),
           ),
-          SizedBox(
-            width: 82,
+          Expanded(
+            flex: 11,
             child: Text('${member.cardIds.length}', style: _rowStyle(context)),
           ),
-          SizedBox(
-            width: 150,
+          Expanded(
+            flex: 18,
             child: Text(
               lastActivity == null ? '-' : _relativeActivity(lastActivity!),
               style: _rowStyle(context),
             ),
           ),
-          SizedBox(
-            width: 110,
+          Expanded(
+            flex: 13,
             child: Align(
               alignment: Alignment.centerLeft,
               child: Container(
@@ -635,6 +640,106 @@ class _TeamDirectoryRow extends StatelessWidget {
       fontSize: 15,
       fontWeight: FontWeight.w600,
       color: context.textSecondary,
+    );
+  }
+}
+
+class _TeamDirectoryCompactRow extends StatelessWidget {
+  final TeamMemberModel member;
+  final DateTime? lastActivity;
+
+  const _TeamDirectoryCompactRow({
+    required this.member,
+    required this.lastActivity,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.borderStrongSoft)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _TeamMemberAvatar(member: member, size: 46),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        member.name.trim().isNotEmpty
+                            ? member.name
+                            : 'Miembro sin nombre',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _TeamDirectoryStatusBadge(),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  member.email.trim().isNotEmpty
+                      ? member.email
+                      : member.jobTitle.trim().isNotEmpty
+                      ? member.jobTitle
+                      : 'Sin correo registrado',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: context.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${_roleLabel(member)} · ${member.cardIds.length} perfiles · '
+                  '${lastActivity == null ? 'Sin actividad' : _relativeActivity(lastActivity!)}',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamDirectoryStatusBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        'Activo',
+        style: GoogleFonts.dmSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: AppColors.success,
+        ),
+      ),
     );
   }
 }

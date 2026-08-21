@@ -28,6 +28,7 @@ import '../../card/models/digital_card_model.dart';
 import '../../card/models/contact_item_model.dart';
 import '../../card/models/smart_form_model.dart';
 import '../../card/models/social_link_model.dart';
+import '../../card/utils/calendar_links.dart';
 import '../../card/views/edit_card_view.dart';
 import '../../card/widgets/digital_profile_preview.dart';
 
@@ -89,25 +90,28 @@ class _AdminSmartForm {
   });
 }
 
-enum _AdminCalProvider { googleCalendar, calendly, outlook }
+enum _AdminCalProvider { googleCalendar, calendly, outlook, custom }
 
 extension _AdminCalProviderX on _AdminCalProvider {
   String get label => switch (this) {
     _AdminCalProvider.googleCalendar => 'Google Calendar',
     _AdminCalProvider.calendly => 'Calendly',
     _AdminCalProvider.outlook => 'Outlook',
+    _AdminCalProvider.custom => 'Otro',
   };
 
   IconData get icon => switch (this) {
     _AdminCalProvider.googleCalendar => Icons.event_outlined,
     _AdminCalProvider.calendly => Icons.calendar_today_outlined,
     _AdminCalProvider.outlook => Icons.mail_outline_rounded,
+    _AdminCalProvider.custom => Icons.add_link_rounded,
   };
 
   String get hint => switch (this) {
     _AdminCalProvider.googleCalendar => 'https://calendar.google.com/...',
     _AdminCalProvider.calendly => 'https://calendly.com/tu-nombre',
     _AdminCalProvider.outlook => 'https://outlook.office365.com/...',
+    _AdminCalProvider.custom => 'https://tu-servicio.com/tu-enlace',
   };
 }
 
@@ -120,6 +124,7 @@ class _AdminMember {
   List<_AdminSmartForm> forms;
   _AdminCalProvider? calendarProvider;
   String? calendarioUrl;
+  String? customIntegrationLabel;
 
   _AdminMember({
     required this.member,
@@ -128,6 +133,7 @@ class _AdminMember {
     List<_AdminSmartForm>? forms,
     this.calendarProvider,
     this.calendarioUrl,
+    this.customIntegrationLabel,
   }) : forms = forms ?? _defaultForms();
 
   bool get isAdmin => member.isAdmin;
@@ -370,7 +376,8 @@ class _AdminViewState extends State<AdminView> {
           isActive: card.isActive,
           forms: _formsFromCard(card),
           calendarProvider: _providerFromUrl(card.calendarUrl),
-          calendarioUrl: card.calendarUrl,
+          calendarioUrl: _firstCalendarUrlFromStored(card.calendarUrl),
+          customIntegrationLabel: parseCustomCalendarLabel(card.calendarUrl),
         );
       }),
     );
@@ -451,14 +458,46 @@ class _AdminViewState extends State<AdminView> {
   static _AdminCalProvider? _providerFromUrl(String? url) {
     final value = url?.trim().toLowerCase();
     if (value == null || value.isEmpty) return null;
+    if (!value.startsWith('{') &&
+        (value.contains('outlook') || value.contains('office365'))) {
+      return _AdminCalProvider.outlook;
+    }
+    final integrations = parseCalendarIntegrationLinks(url);
+    if (integrations.isNotEmpty) {
+      return switch (integrations.first.provider) {
+        CalendarProviderType.calendly => _AdminCalProvider.calendly,
+        CalendarProviderType.googleCalendar => _AdminCalProvider.googleCalendar,
+        CalendarProviderType.microsoftTeams => _AdminCalProvider.custom,
+        CalendarProviderType.custom => _AdminCalProvider.custom,
+      };
+    }
     if (value.contains('calendly')) return _AdminCalProvider.calendly;
     if (value.contains('calendar.google')) {
       return _AdminCalProvider.googleCalendar;
     }
-    if (value.contains('outlook') || value.contains('office365')) {
-      return _AdminCalProvider.outlook;
-    }
     return null;
+  }
+
+  static String? _firstCalendarUrlFromStored(String? url) {
+    final integrations = parseCalendarIntegrationLinks(url);
+    if (integrations.isNotEmpty) return integrations.first.url;
+    final value = url?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
+  static String _encodeAdminCalendarUrl({
+    required _AdminCalProvider? provider,
+    required String url,
+    required String? customLabel,
+  }) {
+    final cleanUrl = url.trim();
+    if (provider == null || cleanUrl.isEmpty) return '';
+    if (provider == _AdminCalProvider.custom) {
+      return encodeCalendarLinks({
+        CalendarProviderType.custom: cleanUrl,
+      }, customLabel: customLabel);
+    }
+    return cleanUrl;
   }
 
   static _AdminFieldType _adminFieldTypeFromSmartField(
@@ -491,7 +530,11 @@ class _AdminViewState extends State<AdminView> {
                 .clamp(960.0, 1180.0)
                 .toDouble(),
             height: MediaQuery.of(context).size.height * 0.88,
-            child: _EditMemberDialog(member: member, onSave: _saveMember),
+            child: _EditMemberDialog(
+              member: member,
+              consistency: _consistency,
+              onSave: _saveMember,
+            ),
           ),
         ),
       );
@@ -513,6 +556,7 @@ class _AdminViewState extends State<AdminView> {
             ),
             child: _EditMemberDialog(
               member: member,
+              consistency: _consistency,
               scrollController: ctrl,
               onSave: _saveMember,
             ),
@@ -755,7 +799,8 @@ class _AdminViewState extends State<AdminView> {
           isActive: member.isActive,
           forms: member.forms,
           calendarProvider: provider,
-          calendarioUrl: cleanUrl.isEmpty ? null : cleanUrl,
+          calendarioUrl: _firstCalendarUrlFromStored(cleanUrl),
+          customIntegrationLabel: parseCustomCalendarLabel(cleanUrl),
         );
       }).toList();
     });
@@ -779,6 +824,7 @@ class _AdminViewState extends State<AdminView> {
     DigitalCardModel card, {
     _AdminCalProvider? calendarProvider,
     String? calendarioUrl,
+    String? customIntegrationLabel,
   }) {
     return _AdminMember(
       member: member.member,
@@ -787,6 +833,8 @@ class _AdminViewState extends State<AdminView> {
       forms: member.forms,
       calendarProvider: calendarProvider ?? member.calendarProvider,
       calendarioUrl: calendarioUrl ?? member.calendarioUrl,
+      customIntegrationLabel:
+          customIntegrationLabel ?? member.customIntegrationLabel,
     );
   }
 
@@ -801,6 +849,7 @@ class _AdminViewState extends State<AdminView> {
       forms: forms,
       calendarProvider: member.calendarProvider,
       calendarioUrl: member.calendarioUrl,
+      customIntegrationLabel: member.customIntegrationLabel,
     );
   }
 
@@ -2967,6 +3016,80 @@ class _AdminMemberAvatar extends StatelessWidget {
   }
 }
 
+class _AdminEditSharedLockState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+
+  const _AdminEditSharedLockState({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 48),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.22),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: AppColors.primary, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        message,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          color: context.textSecondary,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ProfileActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -3534,10 +3657,12 @@ class _MemberCard extends StatelessWidget {
 
 class _EditMemberDialog extends StatefulWidget {
   final _AdminMember member;
+  final _TeamConsistencySettings consistency;
   final Future<void> Function(_AdminMember) onSave;
   final ScrollController? scrollController;
   const _EditMemberDialog({
     required this.member,
+    required this.consistency,
     required this.onSave,
     this.scrollController,
   });
@@ -3561,6 +3686,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
   late List<_AdminSmartForm> _forms;
   _AdminCalProvider? _calProvider;
   late TextEditingController _calUrlCtrl;
+  late TextEditingController _calLabelCtrl;
   bool _saving = false;
 
   static const _preferredColors = <Color>[
@@ -3635,6 +3761,9 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
     _calUrlCtrl = TextEditingController(
       text: widget.member.calendarioUrl ?? '',
     );
+    _calLabelCtrl = TextEditingController(
+      text: widget.member.customIntegrationLabel ?? 'Otra integración',
+    );
     _nameCtrl.addListener(_updateCard);
     _titleCtrl.addListener(_updateCard);
     _bioCtrl.addListener(_updateCard);
@@ -3673,14 +3802,20 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
       _card.contactItems.any((item) => item.value.trim().isNotEmpty),
       _card.socialLinks.any((item) => item.url.trim().isNotEmpty),
       true,
-      _forms.any((form) => form.enabled),
-      _calProvider != null && _calUrlCtrl.text.trim().isNotEmpty,
+      widget.consistency.sharedForms || _forms.any((form) => form.enabled),
+      widget.consistency.sharedIntegrations ||
+          (_calProvider != null && _calUrlCtrl.text.trim().isNotEmpty),
     ];
   }
 
   Future<void> _save() async {
     if (_saving) return;
     final calendarUrl = _calUrlCtrl.text.trim();
+    final storedCalendarUrl = _AdminViewState._encodeAdminCalendarUrl(
+      provider: _calProvider,
+      url: calendarUrl,
+      customLabel: _calLabelCtrl.text,
+    );
     final enabledFormIds = _forms
         .where((form) => form.enabled)
         .map((form) => form.id)
@@ -3688,7 +3823,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
     final nextCard = _card.copyWith(
       enabledForms: enabledFormIds,
       calendarEnabled: _calProvider != null && calendarUrl.isNotEmpty,
-      calendarUrl: calendarUrl,
+      calendarUrl: storedCalendarUrl,
       contactItems: _card.contactItems,
       socialLinks: _card.socialLinks,
     );
@@ -3699,6 +3834,9 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
       forms: _forms,
       calendarProvider: _calProvider,
       calendarioUrl: calendarUrl.isEmpty ? null : calendarUrl,
+      customIntegrationLabel: _calLabelCtrl.text.trim().isEmpty
+          ? 'Otra integración'
+          : _calLabelCtrl.text.trim(),
     );
     setState(() => _saving = true);
     try {
@@ -3717,6 +3855,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
     _bioCtrl.dispose();
     _companyCtrl.dispose();
     _calUrlCtrl.dispose();
+    _calLabelCtrl.dispose();
     for (final c in _contactCtrls) {
       c.dispose();
     }
@@ -3910,10 +4049,34 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
       case 2:
         return _buildRedesTab();
       case 3:
+        if (widget.consistency.sharedDesign) {
+          return const _AdminEditSharedLockState(
+            icon: Icons.palette_outlined,
+            title: 'Diseño compartido activo',
+            message:
+                'El diseño se gestiona desde Consistencia del equipo y se aplica a todos los miembros.',
+          );
+        }
         return _buildDisenoTab();
       case 4:
+        if (widget.consistency.sharedForms) {
+          return const _AdminEditSharedLockState(
+            icon: Icons.assignment_outlined,
+            title: 'Formulario compartido activo',
+            message:
+                'Los formularios se gestionan desde Consistencia del equipo y se aplican a todos los miembros.',
+          );
+        }
         return _buildFormulariosTab();
       case 5:
+        if (widget.consistency.sharedIntegrations) {
+          return const _AdminEditSharedLockState(
+            icon: Icons.admin_panel_settings_outlined,
+            title: 'Integración compartida activa',
+            message:
+                'Las integraciones se gestionan desde Consistencia del equipo y reemplazan la configuración individual.',
+          );
+        }
         return _buildCalendarioTab();
       default:
         return const SizedBox.shrink();
@@ -4254,7 +4417,13 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
             final provider = _AdminCalProvider.values[i];
             final selected = _calProvider == provider;
             return GestureDetector(
-              onTap: () => setState(() => _calProvider = provider),
+              onTap: () => setState(() {
+                _calProvider = provider;
+                if (provider == _AdminCalProvider.custom &&
+                    _calLabelCtrl.text.trim().isEmpty) {
+                  _calLabelCtrl.text = 'Otra integración';
+                }
+              }),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
@@ -4307,6 +4476,47 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
           }),
           if (_calProvider != null) ...[
             const SizedBox(height: 16),
+            if (_calProvider == _AdminCalProvider.custom) ...[
+              _sectionTitle('Etiqueta visible'),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _calLabelCtrl,
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  color: context.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Ej. Demo personalizada, WhatsApp, CRM',
+                  hintStyle: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    color: context.textMuted,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: context.borderColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: context.borderColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.5,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: context.bgInput,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             _sectionTitle('URL del calendario'),
             const SizedBox(height: 10),
             TextField(

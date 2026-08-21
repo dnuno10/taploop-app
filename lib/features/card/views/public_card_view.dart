@@ -1591,19 +1591,18 @@ class _CalendarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final links = parseCalendarLinks(url);
+    final integrations = parseCalendarIntegrationLinks(url);
 
-    Future<void> openProvider(CalendarProviderType provider) async {
-      final rawUrl = links[provider];
-      if (rawUrl == null || rawUrl.trim().isEmpty) return;
-      final uri = Uri.parse(normalizeCalendarUrl(rawUrl));
+    Future<void> openIntegration(CalendarIntegrationLink integration) async {
+      if (integration.url.trim().isEmpty) return;
+      final uri = Uri.parse(normalizeCalendarUrl(integration.url));
       await _launchPublicUri(uri);
     }
 
     Future<void> handleTap() async {
-      if (links.isEmpty) return;
-      if (links.length == 1) {
-        await openProvider(links.keys.first);
+      if (integrations.isEmpty) return;
+      if (integrations.length == 1) {
+        await openIntegration(integrations.first);
         return;
       }
 
@@ -1620,21 +1619,21 @@ class _CalendarButton extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Selecciona proveedor',
+                    'Selecciona integración',
                     style: GoogleFonts.outfit(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  ...links.keys.map(
-                    (provider) => ListTile(
+                  ...integrations.map(
+                    (integration) => ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: Text(provider.label),
+                      title: Text(integration.displayLabel),
                       trailing: const Icon(Icons.open_in_new_rounded),
                       onTap: () async {
                         Navigator.pop(ctx);
-                        await openProvider(provider);
+                        await openIntegration(integration);
                       },
                     ),
                   ),
@@ -1674,7 +1673,11 @@ class _CalendarButton extends StatelessWidget {
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          'Agendar reunión',
+                          integrations.length == 1 &&
+                                  integrations.first.provider ==
+                                      CalendarProviderType.custom
+                              ? integrations.first.displayLabel
+                              : 'Agendar reunión',
                           style: GoogleFonts.outfit(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,

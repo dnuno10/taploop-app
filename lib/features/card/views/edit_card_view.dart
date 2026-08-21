@@ -6835,12 +6835,18 @@ class _CalendarioTab extends StatefulWidget {
 class _CalendarioTabState extends State<_CalendarioTab> {
   late bool _enabled;
   late final Map<CalendarProviderType, TextEditingController> _controllers;
+  late String _customLabel;
+
+  int get _configuredIntegrationCount =>
+      _controllers.values.where((ctrl) => ctrl.text.trim().isNotEmpty).length;
 
   @override
   void initState() {
     super.initState();
     _enabled = widget.calendarEnabled;
     final parsed = parseCalendarLinks(widget.calendarUrl);
+    _customLabel =
+        parseCustomCalendarLabel(widget.calendarUrl) ?? 'Otra integración';
     _controllers = {
       for (final provider in CalendarProviderType.values)
         provider: TextEditingController(text: parsed[provider] ?? ''),
@@ -6859,7 +6865,7 @@ class _CalendarioTabState extends State<_CalendarioTab> {
     final payload = encodeCalendarLinks({
       for (final entry in _controllers.entries)
         if (entry.value.text.trim().isNotEmpty) entry.key: entry.value.text,
-    });
+    }, customLabel: _customLabel);
     widget.onChanged(_enabled, payload);
   }
 
@@ -6867,7 +6873,11 @@ class _CalendarioTabState extends State<_CalendarioTab> {
     CalendarProviderType provider = initial ?? CalendarProviderType.calendly;
     final providerCtrl = TextEditingController(text: provider.label);
     final urlCtrl = TextEditingController(text: _controllers[provider]!.text);
-    final labelCtrl = TextEditingController(text: 'Agenda una reunión');
+    final labelCtrl = TextEditingController(
+      text: provider == CalendarProviderType.custom
+          ? _customLabel
+          : 'Agenda una reunión',
+    );
     bool visible = _enabled;
 
     await showDialog<void>(
@@ -6879,6 +6889,9 @@ class _CalendarioTabState extends State<_CalendarioTab> {
               provider = selected;
               providerCtrl.text = selected.label;
               urlCtrl.text = _controllers[selected]!.text;
+              labelCtrl.text = selected == CalendarProviderType.custom
+                  ? _customLabel
+                  : 'Agenda una reunión';
             });
           }
 
@@ -6970,16 +6983,18 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                           provider.hint,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _EditorDialogLabel('Etiqueta visible'),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: labelCtrl,
-                        decoration: _corporateInputDecoration(
-                          ctx,
-                          'Agenda una reunión',
+                      if (provider == CalendarProviderType.custom) ...[
+                        const SizedBox(height: 16),
+                        _EditorDialogLabel('Etiqueta visible'),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: labelCtrl,
+                          decoration: _corporateInputDecoration(
+                            ctx,
+                            'Ej. Demo personalizada, WhatsApp, CRM',
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 18),
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -7058,6 +7073,12 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                               onPressed: () {
                                 setState(() {
                                   _enabled = visible;
+                                  if (provider == CalendarProviderType.custom) {
+                                    final label = labelCtrl.text.trim();
+                                    _customLabel = label.isEmpty
+                                        ? 'Otra integración'
+                                        : label;
+                                  }
                                   _controllers[provider]!.text = urlCtrl.text
                                       .trim();
                                 });
@@ -7113,7 +7134,7 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                 Expanded(
                   child: _EditorInlineMetric(
                     icon: Icons.hub_outlined,
-                    value: '1',
+                    value: '$_configuredIntegrationCount',
                     label: 'Integraciones',
                   ),
                 ),
@@ -7121,7 +7142,7 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                 Expanded(
                   child: _EditorInlineMetric(
                     icon: Icons.check_circle_outline_rounded,
-                    value: _enabled ? '1' : '0',
+                    value: _enabled ? '$_configuredIntegrationCount' : '0',
                     label: 'Activas',
                   ),
                 ),
@@ -7157,6 +7178,9 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                       child: _IntegrationRow(
                         provider: provider,
                         url: ctrl.text.trim(),
+                        title: provider == CalendarProviderType.custom
+                            ? _customLabel
+                            : 'Agendar reunión',
                         onEdit: () => _showIntegrationDialog(initial: provider),
                       ),
                     );
@@ -7294,11 +7318,13 @@ class _IntegrationTypeCard extends StatelessWidget {
 class _IntegrationRow extends StatelessWidget {
   final CalendarProviderType provider;
   final String url;
+  final String title;
   final VoidCallback onEdit;
 
   const _IntegrationRow({
     required this.provider,
     required this.url,
+    required this.title,
     required this.onEdit,
   });
 
@@ -7329,7 +7355,7 @@ class _IntegrationRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Agendar reunión',
+                      title,
                       style: GoogleFonts.outfit(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -7368,6 +7394,7 @@ IconData _calendarProviderIcon(CalendarProviderType provider) {
     CalendarProviderType.calendly => Icons.calendar_month_outlined,
     CalendarProviderType.googleCalendar => Icons.event_available_outlined,
     CalendarProviderType.microsoftTeams => Icons.video_call_outlined,
+    CalendarProviderType.custom => Icons.add_link_rounded,
   };
 }
 
@@ -7376,6 +7403,7 @@ String _calendarProviderSubtitle(CalendarProviderType provider) {
     CalendarProviderType.calendly => 'Agenda reuniones',
     CalendarProviderType.googleCalendar => 'Reservas con Google',
     CalendarProviderType.microsoftTeams => 'Reuniones por Teams',
+    CalendarProviderType.custom => 'Etiqueta y enlace libres',
   };
 }
 
