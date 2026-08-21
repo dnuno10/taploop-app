@@ -366,17 +366,37 @@ class AdminRepository {
     required String cardId,
     required List<SmartFormModel> forms,
   }) async {
+    final payload = forms
+        .where((form) => form.name.trim().isNotEmpty)
+        .map((form) => form.toJson())
+        .toList();
+
+    try {
+      await _db.rpc(
+        'replace_smart_forms',
+        params: {'p_card_id': cardId, 'p_forms': payload},
+      );
+      return;
+    } catch (error) {
+      if (!_isMissingReplaceSmartFormsRpc(error)) rethrow;
+    }
+
     final existing = await CardRepository.fetchSmartForms(cardId);
     for (final form in existing) {
       await CardRepository.deleteSmartForm(form.id);
     }
-    final payload = forms
-        .where((form) => form.name.trim().isNotEmpty)
-        .map((form) => form.toJson(cardId: cardId))
-        .toList();
     if (payload.isNotEmpty) {
-      await _db.from('smart_forms').insert(payload);
+      await _db
+          .from('smart_forms')
+          .insert(payload.map((form) => {...form, 'card_id': cardId}).toList());
     }
+  }
+
+  static bool _isMissingReplaceSmartFormsRpc(Object error) {
+    final message = error.toString();
+    return message.contains('replace_smart_forms') ||
+        message.contains('PGRST202') ||
+        message.contains('Could not find the function');
   }
 
   static Future<void> updateOrgConsistencySettings({
