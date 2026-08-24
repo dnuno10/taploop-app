@@ -358,7 +358,15 @@ class AdminRepository {
         })
         .toList();
     if (payload.isNotEmpty) {
-      await _db.from('social_links').insert(payload);
+      try {
+        await _db.from('social_links').insert(payload);
+      } catch (error) {
+        if (!_isMissingColumn(error, 'icon_key')) rethrow;
+        final fallback = payload.map((item) {
+          return Map<String, dynamic>.from(item)..remove('icon_key');
+        }).toList();
+        await _db.from('social_links').insert(fallback);
+      }
     }
   }
 
@@ -423,21 +431,26 @@ class AdminRepository {
   }) async {
     final cardIds = _normalizedCardIds(targetCardIds);
     if (cardIds.isEmpty) return;
-    await _db
-        .from('digital_cards')
-        .update({
-          'theme_style': sourceCard.themeStyle.name,
-          'layout_style': sourceCard.profileDesign.compatibleLayoutStyle.name,
-          'profile_design': sourceCard.profileDesign.name,
-          'primary_color': sourceCard.primaryColor.toARGB32(),
-          'background_color_start': sourceCard.backgroundColorStart?.toARGB32(),
-          'background_color_end': sourceCard.backgroundColorEnd?.toARGB32(),
-          'bg_style': sourceCard.bgStyle.name,
-          'bg_color': sourceCard.bgColor?.toARGB32(),
-          'bg_color_end': sourceCard.bgColorEnd?.toARGB32(),
-          'show_verified_badge': sourceCard.showVerifiedBadge,
-        })
-        .inFilter('id', cardIds);
+    final payload = {
+      'theme_style': sourceCard.themeStyle.name,
+      'layout_style': sourceCard.profileDesign.compatibleLayoutStyle.name,
+      'profile_design': sourceCard.profileDesign.name,
+      'primary_color': sourceCard.primaryColor.toARGB32(),
+      'icon_color': sourceCard.iconColor.toARGB32(),
+      'background_color_start': sourceCard.backgroundColorStart?.toARGB32(),
+      'background_color_end': sourceCard.backgroundColorEnd?.toARGB32(),
+      'bg_style': sourceCard.bgStyle.name,
+      'bg_color': sourceCard.bgColor?.toARGB32(),
+      'bg_color_end': sourceCard.bgColorEnd?.toARGB32(),
+      'show_verified_badge': sourceCard.showVerifiedBadge,
+    };
+    try {
+      await _db.from('digital_cards').update(payload).inFilter('id', cardIds);
+    } catch (error) {
+      if (!_isMissingColumn(error, 'icon_color')) rethrow;
+      final fallback = Map<String, dynamic>.from(payload)..remove('icon_color');
+      await _db.from('digital_cards').update(fallback).inFilter('id', cardIds);
+    }
   }
 
   static Future<void> applySharedForms({
@@ -568,7 +581,22 @@ class AdminRepository {
   }
 
   static Future<void> updateCard(DigitalCardModel card) async {
-    await _db.from('digital_cards').update(card.toJson()).eq('id', card.id);
+    final payload = card.toJson();
+    try {
+      await _db.from('digital_cards').update(payload).eq('id', card.id);
+    } catch (error) {
+      if (!_isMissingColumn(error, 'icon_color')) rethrow;
+      final fallback = Map<String, dynamic>.from(payload)..remove('icon_color');
+      await _db.from('digital_cards').update(fallback).eq('id', card.id);
+    }
+  }
+
+  static bool _isMissingColumn(Object error, String column) {
+    final message = error.toString();
+    return message.contains(column) &&
+        (message.contains('column') ||
+            message.contains('schema cache') ||
+            message.contains('PGRST204'));
   }
 
   static Future<void> updateCardActivation({

@@ -10,6 +10,7 @@ class PlatformIcon extends StatelessWidget {
   final double size;
   final bool framed;
   final Color? color;
+  final String? iconKey;
 
   const PlatformIcon.social({
     super.key,
@@ -17,6 +18,7 @@ class PlatformIcon extends StatelessWidget {
     this.size = 20,
     this.framed = true,
     this.color,
+    this.iconKey,
   }) : contactType = null;
 
   const PlatformIcon.contact({
@@ -25,7 +27,8 @@ class PlatformIcon extends StatelessWidget {
     this.size = 20,
     this.framed = true,
     this.color,
-  }) : platform = null;
+  }) : platform = null,
+       iconKey = null;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +79,8 @@ class PlatformIcon extends StatelessWidget {
         return FontAwesomeIcons.xTwitter;
       case SocialPlatform.youtube:
         return FontAwesomeIcons.youtube;
+      case SocialPlatform.whatsapp:
+        return FontAwesomeIcons.whatsapp;
       case SocialPlatform.github:
         return FontAwesomeIcons.github;
       case SocialPlatform.calendly:
@@ -103,13 +108,14 @@ class PlatformIcon extends StatelessWidget {
       case SocialPlatform.calendly:
         return Icons.calendar_today_outlined;
       case SocialPlatform.custom:
-        return Icons.link;
+        return customSocialIconData(iconKey);
       case SocialPlatform.linkedin:
       case SocialPlatform.instagram:
       case SocialPlatform.facebook:
       case SocialPlatform.tiktok:
       case SocialPlatform.twitter:
       case SocialPlatform.youtube:
+      case SocialPlatform.whatsapp:
       case SocialPlatform.github:
         return Icons.link;
     }
@@ -143,6 +149,8 @@ class PlatformIcon extends StatelessWidget {
         return const Color(0xFF000000);
       case SocialPlatform.youtube:
         return const Color(0xFFFF0000);
+      case SocialPlatform.whatsapp:
+        return const Color(0xFF25D366);
       case SocialPlatform.calendly:
         return const Color(0xFF006BFF);
       case SocialPlatform.github:
@@ -151,4 +159,25 @@ class PlatformIcon extends StatelessWidget {
         return AppColors.primary;
     }
   }
+}
+
+IconData customSocialIconData(String? key) {
+  return switch (key) {
+    'language' => Icons.language_rounded,
+    'store' => Icons.storefront_outlined,
+    'work' => Icons.work_outline_rounded,
+    'event' => Icons.event_available_outlined,
+    'location' => Icons.location_on_outlined,
+    'phone' => Icons.phone_outlined,
+    'mail' => Icons.mail_outline_rounded,
+    'chat' => Icons.chat_bubble_outline_rounded,
+    'document' => Icons.description_outlined,
+    'image' => Icons.image_outlined,
+    'video' => Icons.play_circle_outline_rounded,
+    'music' => Icons.music_note_rounded,
+    'payment' => Icons.payments_outlined,
+    'shopping' => Icons.shopping_bag_outlined,
+    'restaurant' => Icons.restaurant_outlined,
+    _ => Icons.link_rounded,
+  };
 }

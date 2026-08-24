@@ -45,6 +45,16 @@ extension CalendarProviderTypeX on CalendarProviderType {
   };
 }
 
+CalendarProviderType calendarProviderFromKey(String? key) {
+  return switch (key) {
+    'calendly' => CalendarProviderType.calendly,
+    'google_calendar' => CalendarProviderType.googleCalendar,
+    'microsoft_teams' => CalendarProviderType.microsoftTeams,
+    'custom' => CalendarProviderType.custom,
+    _ => CalendarProviderType.custom,
+  };
+}
+
 Map<CalendarProviderType, String> parseCalendarLinks(String? raw) {
   final links = parseCalendarIntegrationLinks(raw);
   return {for (final link in links) link.provider: link.url};
@@ -54,10 +64,31 @@ List<CalendarIntegrationLink> parseCalendarIntegrationLinks(String? raw) {
   if (raw == null || raw.trim().isEmpty) return [];
   final value = raw.trim();
 
+  if (value.startsWith('[')) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List<dynamic>) {
+        return decoded
+            .map(_parseIntegrationObject)
+            .whereType<CalendarIntegrationLink>()
+            .toList();
+      }
+    } catch (_) {
+      // Fall through to legacy URL parsing.
+    }
+  }
+
   if (value.startsWith('{')) {
     try {
       final decoded = jsonDecode(value);
       if (decoded is Map<String, dynamic>) {
+        final integrations = decoded['integrations'];
+        if (integrations is List<dynamic>) {
+          return integrations
+              .map(_parseIntegrationObject)
+              .whereType<CalendarIntegrationLink>()
+              .toList();
+        }
         final out = <CalendarIntegrationLink>[];
         for (final provider in CalendarProviderType.values) {
           final link = _parseIntegrationValue(provider, decoded[provider.key]);
@@ -118,6 +149,59 @@ String? parseCustomCalendarLabel(String? raw) {
 }
 
 String encodeCalendarLinks(
+  Map<CalendarProviderType, String> links, {
+  String? customLabel,
+}) {
+  final integrations = <CalendarIntegrationLink>[];
+  for (final entry in links.entries) {
+    if (entry.value.trim().isEmpty) continue;
+    integrations.add(
+      CalendarIntegrationLink(
+        provider: entry.key,
+        url: entry.value,
+        customLabel: entry.key == CalendarProviderType.custom
+            ? customLabel
+            : null,
+      ),
+    );
+  }
+  return encodeCalendarIntegrationLinks(integrations);
+}
+
+String encodeCalendarIntegrationLinks(List<CalendarIntegrationLink> links) {
+  final clean = <String, dynamic>{};
+  final integrations = <Map<String, dynamic>>[];
+  for (final link in links) {
+    final url = link.url.trim();
+    if (url.isNotEmpty) {
+      integrations.add({
+        'provider': link.provider.key,
+        if (link.provider == CalendarProviderType.custom)
+          'label': _normalizeCustomLabel(link.customLabel),
+        'url': normalizeCalendarUrl(url),
+      });
+    }
+  }
+  if (integrations.isEmpty) return '';
+  clean['integrations'] = integrations;
+  return jsonEncode(clean);
+}
+
+CalendarIntegrationLink? _parseIntegrationObject(Object? value) {
+  if (value is! Map<String, dynamic>) return null;
+  final provider = calendarProviderFromKey(value['provider'] as String?);
+  final url = (value['url'] ?? value['value']) as String?;
+  if (url == null || url.trim().isEmpty) return null;
+  return CalendarIntegrationLink(
+    provider: provider,
+    url: normalizeCalendarUrl(url),
+    customLabel: provider == CalendarProviderType.custom
+        ? _normalizeCustomLabel(value['label'] as String?)
+        : null,
+  );
+}
+
+String encodeLegacyCalendarLinks(
   Map<CalendarProviderType, String> links, {
   String? customLabel,
 }) {

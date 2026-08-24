@@ -345,7 +345,22 @@ String _normalizePublicSocialUrl(SocialLinkModel link) {
   if (link.platform == SocialPlatform.instagram) {
     return _normalizeInstagramUrl(raw);
   }
+  if (link.platform == SocialPlatform.whatsapp) {
+    return _normalizeWhatsAppSocialUrl(raw);
+  }
   return _normalizeWebUrl(raw);
+}
+
+String _normalizeWhatsAppSocialUrl(String raw) {
+  final value = raw.trim();
+  if (value.startsWith('whatsapp://')) return value;
+  if (value.startsWith(RegExp(r'https?://'))) return value;
+  if (value.startsWith('wa.me/') || value.startsWith('api.whatsapp.com/')) {
+    return 'https://$value';
+  }
+  final digits = value.replaceAll(RegExp(r'\D'), '');
+  if (digits.isEmpty) return _normalizeWebUrl(value);
+  return 'https://wa.me/$digits';
 }
 
 String _normalizeInstagramUrl(String raw) {
@@ -492,6 +507,7 @@ class _CardPage extends StatelessWidget {
               card: card,
               contacts: visibleContacts,
               accent: accent,
+              iconColor: card.iconColor,
             ),
           ),
         if (isModern && visibleSocials.isNotEmpty) ...[
@@ -502,7 +518,11 @@ class _CardPage extends StatelessWidget {
             ),
           ),
           SliverToBoxAdapter(
-            child: _ModernSocialCircles(links: visibleSocials, cardId: card.id),
+            child: _ModernSocialCircles(
+              links: visibleSocials,
+              cardId: card.id,
+              customIconColor: card.iconColor,
+            ),
           ),
         ],
         if (visibleContacts.isNotEmpty) ...[
@@ -529,6 +549,7 @@ class _CardPage extends StatelessWidget {
               links: visibleSocials,
               textColor: textCol,
               cardId: card.id,
+              customIconColor: card.iconColor,
             ),
           ),
         ],
@@ -725,11 +746,13 @@ class _ModernActionButtons extends StatelessWidget {
   final DigitalCardModel card;
   final List<ContactItemModel> contacts;
   final Color accent;
+  final Color iconColor;
 
   const _ModernActionButtons({
     required this.card,
     required this.contacts,
     required this.accent,
+    required this.iconColor,
   });
 
   ContactItemModel? get _emailContact {
@@ -785,7 +808,7 @@ class _ModernActionButtons extends StatelessWidget {
                   child: _ModernSecondaryButton(
                     icon: Icons.email_rounded,
                     label: 'Enviar correo',
-                    accent: accent,
+                    iconColor: iconColor,
                     onTap: _sendEmail,
                   ),
                 ),
@@ -795,7 +818,7 @@ class _ModernActionButtons extends StatelessWidget {
                 child: _ModernSecondaryButton(
                   icon: Icons.share_rounded,
                   label: 'Compartir',
-                  accent: accent,
+                  iconColor: iconColor,
                   onTap: () => _share(context),
                 ),
               ),
@@ -810,13 +833,13 @@ class _ModernActionButtons extends StatelessWidget {
 class _ModernSecondaryButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color accent;
+  final Color iconColor;
   final VoidCallback? onTap;
 
   const _ModernSecondaryButton({
     required this.icon,
     required this.label,
-    required this.accent,
+    required this.iconColor,
     required this.onTap,
   });
 
@@ -837,7 +860,11 @@ class _ModernSecondaryButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 21, color: onTap == null ? Colors.grey : accent),
+              Icon(
+                icon,
+                size: 21,
+                color: onTap == null ? Colors.grey : iconColor,
+              ),
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
@@ -1236,7 +1263,6 @@ class _ContactSection extends StatelessWidget {
                               contactType: item.type,
                               size: modern ? 24 : 22,
                               framed: !modern,
-                              color: modern ? const Color(0xFF2F5BFF) : null,
                             ),
                             SizedBox(width: modern ? 18 : 14),
                             Expanded(
@@ -1337,8 +1363,13 @@ class _ModernSectionHeader extends StatelessWidget {
 class _ModernSocialCircles extends StatelessWidget {
   final List<SocialLinkModel> links;
   final String cardId;
+  final Color customIconColor;
 
-  const _ModernSocialCircles({required this.links, required this.cardId});
+  const _ModernSocialCircles({
+    required this.links,
+    required this.cardId,
+    required this.customIconColor,
+  });
 
   Future<void> _openUrl(SocialLinkModel link) async {
     final normalizedUrl = _normalizePublicSocialUrl(link);
@@ -1366,7 +1397,7 @@ class _ModernSocialCircles extends StatelessWidget {
               spacing: 13,
               runSpacing: 13,
               children: [
-                for (final link in links.take(6))
+                for (final link in links)
                   Material(
                     color: Colors.white,
                     shape: const CircleBorder(),
@@ -1388,6 +1419,10 @@ class _ModernSocialCircles extends StatelessWidget {
                             platform: link.platform,
                             framed: false,
                             size: 34,
+                            color: link.platform == SocialPlatform.custom
+                                ? customIconColor
+                                : null,
+                            iconKey: link.iconKey,
                           ),
                         ),
                       ),
@@ -1408,10 +1443,12 @@ class _SocialSection extends StatelessWidget {
   final List<SocialLinkModel> links;
   final Color textColor;
   final String cardId;
+  final Color customIconColor;
   const _SocialSection({
     required this.links,
     required this.textColor,
     required this.cardId,
+    required this.customIconColor,
   });
 
   Future<void> _openUrl(SocialLinkModel link) async {
@@ -1476,6 +1513,10 @@ class _SocialSection extends StatelessWidget {
                             PlatformIcon.social(
                               platform: link.platform,
                               size: 22,
+                              color: link.platform == SocialPlatform.custom
+                                  ? customIconColor
+                                  : null,
+                              iconKey: link.iconKey,
                             ),
                             const SizedBox(width: 14),
                             Expanded(
@@ -1599,107 +1640,78 @@ class _CalendarButton extends StatelessWidget {
       await _launchPublicUri(uri);
     }
 
-    Future<void> handleTap() async {
-      if (integrations.isEmpty) return;
-      if (integrations.length == 1) {
-        await openIntegration(integrations.first);
-        return;
-      }
-
-      if (!context.mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.white,
-        builder: (ctx) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Selecciona integración',
-                    style: GoogleFonts.outfit(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ...integrations.map(
-                    (integration) => ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(integration.displayLabel),
-                      trailing: const Icon(Icons.open_in_new_rounded),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        await openIntegration(integration);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    }
+    if (integrations.isEmpty) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: SizedBox(
-            width: double.infinity,
-            child: Material(
-              color: accent,
-              borderRadius: BorderRadius.circular(999),
-              child: InkWell(
-                onTap: handleTap,
-                borderRadius: BorderRadius.circular(999),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 26,
-                    vertical: 20,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.calendar_today_outlined,
-                        size: 25,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          integrations.length == 1 &&
-                                  integrations.first.provider ==
-                                      CalendarProviderType.custom
-                              ? integrations.first.displayLabel
-                              : 'Agendar reunión',
-                          style: GoogleFonts.outfit(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
+          child: Column(
+            children: [
+              for (final integration in integrations)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Material(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(999),
+                      child: InkWell(
+                        onTap: () => openIntegration(integration),
+                        borderRadius: BorderRadius.circular(999),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 26,
+                            vertical: 20,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _calendarProviderIcon(integration.provider),
+                                size: 25,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Text(
+                                  integration.displayLabel,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 30,
+                                color: Colors.white,
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      const Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 30,
-                        color: Colors.white,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+IconData _calendarProviderIcon(CalendarProviderType provider) {
+  return switch (provider) {
+    CalendarProviderType.calendly => Icons.calendar_month_outlined,
+    CalendarProviderType.googleCalendar => Icons.event_available_outlined,
+    CalendarProviderType.microsoftTeams => Icons.video_call_outlined,
+    CalendarProviderType.custom => Icons.add_link_rounded,
+  };
 }
 
 // ─── Forms Section ────────────────────────────────────────────────────────────

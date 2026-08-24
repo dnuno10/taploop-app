@@ -725,6 +725,7 @@ class _AdminViewState extends State<AdminView> {
           member.card.copyWith(
             themeStyle: sourceCard.themeStyle,
             primaryColor: sourceCard.primaryColor,
+            iconColor: sourceCard.iconColor,
             backgroundColorStart: sourceCard.backgroundColorStart,
             backgroundColorEnd: sourceCard.backgroundColorEnd,
             profileDesign: sourceCard.profileDesign,
@@ -1860,8 +1861,7 @@ class _SharedDesignEditor extends StatelessWidget {
     Color(0xFFF5A623),
   ];
 
-  Color get _accentColor =>
-      card.backgroundColorEnd ?? card.bgColorEnd ?? card.primaryColor;
+  Color get _iconColor => card.iconColor;
 
   Color get _backgroundColor =>
       card.bgColor ??
@@ -1871,7 +1871,7 @@ class _SharedDesignEditor extends StatelessWidget {
           : Colors.white);
 
   Color get _backgroundEndColor =>
-      card.bgColorEnd ?? card.backgroundColorEnd ?? _accentColor;
+      card.bgColorEnd ?? card.backgroundColorEnd ?? card.primaryColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1930,7 +1930,7 @@ class _SharedDesignEditor extends StatelessWidget {
                 _SharedDesignSection(
                   title: 'Identidad visual',
                   subtitle:
-                      'Color principal para acciones y color de acento para detalles visuales.',
+                      'Color principal para acciones y color personalizado para iconos.',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1944,14 +1944,10 @@ class _SharedDesignEditor extends StatelessWidget {
                       const SizedBox(height: 18),
                       _sharedColorPicker(
                         context,
-                        label: 'Color de acento',
-                        selectedColor: _accentColor,
-                        onSelected: (color) => onChanged(
-                          card.copyWith(
-                            backgroundColorEnd: color,
-                            bgColorEnd: color,
-                          ),
-                        ),
+                        label: 'Color de iconos',
+                        selectedColor: _iconColor,
+                        onSelected: (color) =>
+                            onChanged(card.copyWith(iconColor: color)),
                       ),
                     ],
                   ),
@@ -2006,9 +2002,9 @@ class _SharedDesignEditor extends StatelessWidget {
                           card.copyWith(
                             themeStyle: CardThemeStyle.white,
                             backgroundColorStart: Colors.white,
-                            backgroundColorEnd: _accentColor,
+                            backgroundColorEnd: _backgroundEndColor,
                             bgColor: Colors.white,
-                            bgColorEnd: _accentColor,
+                            bgColorEnd: _backgroundEndColor,
                           ),
                         ),
                       ),
@@ -2019,9 +2015,9 @@ class _SharedDesignEditor extends StatelessWidget {
                           card.copyWith(
                             themeStyle: CardThemeStyle.black,
                             backgroundColorStart: const Color(0xFF0D0D0D),
-                            backgroundColorEnd: _accentColor,
+                            backgroundColorEnd: _backgroundEndColor,
                             bgColor: const Color(0xFF0D0D0D),
-                            bgColorEnd: _accentColor,
+                            bgColorEnd: _backgroundEndColor,
                           ),
                         ),
                       ),
@@ -4969,6 +4965,7 @@ class _EditMemberDialogState extends State<_EditMemberDialog>
     SocialPlatform.tiktok => 'TikTok',
     SocialPlatform.twitter => 'X / Twitter',
     SocialPlatform.youtube => 'YouTube',
+    SocialPlatform.whatsapp => 'WhatsApp',
     SocialPlatform.calendly => 'Calendly',
     SocialPlatform.github => 'GitHub',
     SocialPlatform.custom => 'Enlace',

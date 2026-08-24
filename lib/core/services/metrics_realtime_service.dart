@@ -25,7 +25,7 @@ class MetricsRealtimeSubscription {
     required String cardId,
     required VoidCallback onRefresh,
     Duration debounce = const Duration(milliseconds: 450),
-    Duration pollInterval = const Duration(seconds: 5),
+    Duration pollInterval = const Duration(minutes: 1),
   }) {
     final subscription = MetricsRealtimeSubscription._(
       onRefresh: onRefresh,
@@ -79,7 +79,7 @@ class MetricsRealtimeSubscription {
     required String orgId,
     required VoidCallback onRefresh,
     Duration debounce = const Duration(milliseconds: 500),
-    Duration pollInterval = const Duration(seconds: 8),
+    Duration pollInterval = const Duration(minutes: 2),
   }) {
     final subscription = MetricsRealtimeSubscription._(
       onRefresh: onRefresh,

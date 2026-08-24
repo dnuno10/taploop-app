@@ -9,6 +9,7 @@ import '../models/contact_item_model.dart';
 import '../models/digital_card_model.dart';
 import '../models/smart_form_model.dart';
 import '../models/social_link_model.dart';
+import '../utils/calendar_links.dart';
 
 /// Mini phone-frame preview of the digital profile card (centralized links).
 class DigitalProfilePreview extends StatelessWidget {
@@ -126,6 +127,7 @@ class _ScreenContent extends StatelessWidget {
   Color get _subColor => _textColor.withValues(alpha: 0.55);
 
   Color get _accentColor => card.primaryColor;
+  Color get _iconColor => card.iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -469,6 +471,10 @@ class _ScreenContent extends StatelessWidget {
                     icon: PlatformIcon.social(
                       platform: link.platform,
                       size: 13 * scale,
+                      color: link.platform == SocialPlatform.custom
+                          ? _iconColor
+                          : null,
+                      iconKey: link.iconKey,
                     ),
                     title: link.label,
                     subtitle: _shortHandle(link.url),
@@ -491,7 +497,7 @@ class _ScreenContent extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 14 * scale),
           child: Column(
             children: [
-              for (final item in contacts.take(3))
+              for (final item in contacts)
                 Padding(
                   padding: EdgeInsets.only(bottom: 8 * scale),
                   child: _listRow(
@@ -520,7 +526,7 @@ class _ScreenContent extends StatelessWidget {
               icon: Icon(
                 Icons.email_rounded,
                 size: 15 * scale,
-                color: _accentColor,
+                color: _iconColor,
               ),
               label: 'Enviar correo',
               filled: false,
@@ -533,7 +539,7 @@ class _ScreenContent extends StatelessWidget {
               icon: Icon(
                 Icons.share_rounded,
                 size: 15 * scale,
-                color: _accentColor,
+                color: _iconColor,
               ),
               label: 'Compartir',
               filled: false,
@@ -573,6 +579,10 @@ class _ScreenContent extends StatelessWidget {
                       platform: link.platform,
                       framed: false,
                       size: 27 * scale,
+                      color: link.platform == SocialPlatform.custom
+                          ? _iconColor
+                          : null,
+                      iconKey: link.iconKey,
                     ),
                   ),
                 ),
@@ -592,7 +602,7 @@ class _ScreenContent extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 14 * scale),
           child: Column(
             children: [
-              for (final item in contacts.take(3))
+              for (final item in contacts)
                 Padding(
                   padding: EdgeInsets.only(bottom: 8 * scale),
                   child: _modernListRow(
@@ -600,7 +610,6 @@ class _ScreenContent extends StatelessWidget {
                       contactType: item.type,
                       framed: false,
                       size: 15 * scale,
-                      color: _accentColor,
                     ),
                     label: _modernContactLabel(item),
                     trailing: Icons.arrow_forward_rounded,
@@ -671,24 +680,45 @@ class _ScreenContent extends StatelessWidget {
   }
 
   Widget _buildCalendarButton() {
+    final integrations = parseCalendarIntegrationLinks(card.calendarUrl);
+    if (integrations.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildSectionTitle('Agenda una reunión'),
+        _buildSectionTitle('Agendar reunión'),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 14 * scale),
-          child: _pillRow(
-            icon: Icon(
-              Icons.calendar_month_rounded,
-              size: 14 * scale,
-              color: Colors.white,
-            ),
-            label: 'Agendar reunión',
-            filled: true,
+          child: Column(
+            children: [
+              for (final integration in integrations)
+                Padding(
+                  padding: EdgeInsets.only(bottom: 8 * scale),
+                  child: _pillRow(
+                    icon: Icon(
+                      _calendarProviderIcon(integration.provider),
+                      size: 14 * scale,
+                      color: Colors.white,
+                    ),
+                    label: integration.displayLabel,
+                    filled: true,
+                    allowWrap: true,
+                  ),
+                ),
+            ],
           ),
         ),
       ],
     );
+  }
+
+  IconData _calendarProviderIcon(CalendarProviderType provider) {
+    return switch (provider) {
+      CalendarProviderType.calendly => Icons.calendar_month_outlined,
+      CalendarProviderType.googleCalendar => Icons.event_available_outlined,
+      CalendarProviderType.microsoftTeams => Icons.video_call_outlined,
+      CalendarProviderType.custom => Icons.add_link_rounded,
+    };
   }
 
   Widget _buildFormPreview(SmartFormModel form) {

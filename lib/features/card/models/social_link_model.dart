@@ -5,6 +5,7 @@ enum SocialPlatform {
   tiktok,
   twitter,
   youtube,
+  whatsapp,
   calendly,
   github,
   custom,
@@ -22,6 +23,8 @@ SocialPlatform _platformFromString(String s) {
       return SocialPlatform.twitter;
     case 'youtube':
       return SocialPlatform.youtube;
+    case 'whatsapp':
+      return SocialPlatform.whatsapp;
     case 'calendly':
       return SocialPlatform.calendly;
     case 'github':
@@ -38,6 +41,7 @@ class SocialLinkModel {
   final SocialPlatform platform;
   final String url;
   final String? customLabel;
+  final String? iconKey;
   final bool isVisible;
   final int sortOrder;
 
@@ -46,6 +50,7 @@ class SocialLinkModel {
     required this.platform,
     required this.url,
     this.customLabel,
+    this.iconKey,
     this.isVisible = true,
     this.sortOrder = 0,
   });
@@ -56,6 +61,7 @@ class SocialLinkModel {
       platform: _platformFromString(json['platform'] as String? ?? 'custom'),
       url: json['url'] as String? ?? '',
       customLabel: json['custom_label'] as String?,
+      iconKey: json['icon_key'] as String?,
       isVisible: json['is_visible'] as bool? ?? true,
       sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
     );
@@ -66,6 +72,7 @@ class SocialLinkModel {
     'platform': platform.name,
     'url': url,
     'custom_label': customLabel,
+    'icon_key': platform == SocialPlatform.custom ? iconKey : null,
     'is_visible': isVisible,
     'sort_order': sortOrder,
   };
@@ -85,6 +92,8 @@ class SocialLinkModel {
         return 'X / Twitter';
       case SocialPlatform.youtube:
         return 'YouTube';
+      case SocialPlatform.whatsapp:
+        return 'WhatsApp';
       case SocialPlatform.calendly:
         return 'Calendly';
       case SocialPlatform.github:
@@ -108,6 +117,8 @@ class SocialLinkModel {
         return 'twitter';
       case SocialPlatform.youtube:
         return 'youtube';
+      case SocialPlatform.whatsapp:
+        return 'whatsapp';
       case SocialPlatform.calendly:
         return 'calendly';
       case SocialPlatform.github:
@@ -122,6 +133,7 @@ class SocialLinkModel {
     SocialPlatform? platform,
     String? url,
     String? customLabel,
+    String? iconKey,
     bool? isVisible,
     int? sortOrder,
   }) {
@@ -130,6 +142,7 @@ class SocialLinkModel {
       platform: platform ?? this.platform,
       url: url ?? this.url,
       customLabel: customLabel ?? this.customLabel,
+      iconKey: iconKey ?? this.iconKey,
       isVisible: isVisible ?? this.isVisible,
       sortOrder: sortOrder ?? this.sortOrder,
     );

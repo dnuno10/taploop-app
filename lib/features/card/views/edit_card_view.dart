@@ -20,6 +20,7 @@ import '../../../core/data/repositories/card_repository.dart';
 import '../../../core/widgets/card_initial_setup_state.dart';
 import '../../../core/widgets/taploop_button.dart';
 import '../../../core/widgets/taploop_motion.dart';
+import '../../../core/widgets/platform_icon.dart';
 import '../../../core/widgets/taploop_progress_indicator.dart';
 import '../../../core/widgets/taploop_toast.dart';
 import '../models/digital_card_model.dart';
@@ -728,6 +729,7 @@ class _EditCardViewState extends State<EditCardView>
         if (old.platform != link.platform ||
             old.url != link.url ||
             old.customLabel != link.customLabel ||
+            old.iconKey != link.iconKey ||
             old.isVisible != link.isVisible ||
             old.sortOrder != link.sortOrder) {
           await CardRepository.updateSocialLink(link);
@@ -3092,6 +3094,7 @@ class _SocialRow extends StatelessWidget {
                     link.platform,
                     color: _socialPlatformColor(link.platform),
                     size: 29,
+                    iconKey: link.iconKey,
                   ),
                   const SizedBox(width: 18),
                   Expanded(
@@ -3423,6 +3426,7 @@ Widget _socialPlatformIcon(
   SocialPlatform platform, {
   required Color color,
   required double size,
+  String? iconKey,
 }) {
   final FaIconData? brandIcon = switch (platform) {
     SocialPlatform.linkedin => FontAwesomeIcons.linkedinIn,
@@ -3431,6 +3435,7 @@ Widget _socialPlatformIcon(
     SocialPlatform.tiktok => FontAwesomeIcons.tiktok,
     SocialPlatform.twitter => FontAwesomeIcons.xTwitter,
     SocialPlatform.youtube => FontAwesomeIcons.youtube,
+    SocialPlatform.whatsapp => FontAwesomeIcons.whatsapp,
     SocialPlatform.github => FontAwesomeIcons.github,
     SocialPlatform.calendly || SocialPlatform.custom => null,
   };
@@ -3439,13 +3444,14 @@ Widget _socialPlatformIcon(
   }
   final icon = switch (platform) {
     SocialPlatform.calendly => Icons.event_available_outlined,
-    SocialPlatform.custom => Icons.link_rounded,
+    SocialPlatform.custom => customSocialIconData(iconKey),
     SocialPlatform.linkedin ||
     SocialPlatform.instagram ||
     SocialPlatform.facebook ||
     SocialPlatform.tiktok ||
     SocialPlatform.twitter ||
     SocialPlatform.youtube ||
+    SocialPlatform.whatsapp ||
     SocialPlatform.github => Icons.link_rounded,
   };
   return Icon(icon, color: color, size: size);
@@ -3457,6 +3463,7 @@ Color _socialPlatformColor(SocialPlatform platform) {
     SocialPlatform.facebook => const Color(0xFF2563EB),
     SocialPlatform.tiktok => const Color(0xFF00D1C7),
     SocialPlatform.youtube => const Color(0xFFEF4444),
+    SocialPlatform.whatsapp => const Color(0xFF25D366),
     SocialPlatform.twitter => const Color(0xFF1D9BF0),
     SocialPlatform.linkedin => const Color(0xFF0A66C2),
     SocialPlatform.calendly => const Color(0xFF006BFF),
@@ -3571,11 +3578,11 @@ class _DesignTab extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             _DesignSectionCard(
-              title: 'Color de acento',
+              title: 'Color de iconos',
               child: _DesignColorPicker(
-                color: card.bgColorEnd ?? card.primaryColor,
+                color: card.iconColor,
                 palette: _accentDesignPalette,
-                onChanged: (c) => onChanged(card.copyWith(bgColorEnd: c)),
+                onChanged: (c) => onChanged(card.copyWith(iconColor: c)),
               ),
             ),
             const SizedBox(height: 14),
@@ -5499,6 +5506,7 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
   final _urlCtrl = TextEditingController();
   final _labelCtrl = TextEditingController();
   bool _isVisible = true;
+  String _customIconKey = 'link';
   String _urlError = '';
   String _labelError = '';
 
@@ -5512,6 +5520,7 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
       _platform = initial.platform;
       _urlCtrl.text = initial.url;
       _labelCtrl.text = initial.customLabel ?? '';
+      _customIconKey = initial.iconKey ?? 'link';
       _isVisible = initial.isVisible;
     }
     _urlCtrl.addListener(() => setState(() {}));
@@ -5535,8 +5544,10 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
     final label = _labelCtrl.text.trim();
     bool hasError = false;
 
-    // Validar URL
-    final urlValidation = FieldValidators.validateSocialUrl(url);
+    // Validar URL o teléfono si el enlace es WhatsApp.
+    final urlValidation = _platform == SocialPlatform.whatsapp
+        ? _validateWhatsAppLink(url)
+        : FieldValidators.validateSocialUrl(url);
     if (!urlValidation.isValid) {
       setState(() => _urlError = urlValidation.errorMessage ?? '');
       hasError = true;
@@ -5552,6 +5563,20 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
     return !hasError;
   }
 
+  ValidationResult _validateWhatsAppLink(String value) {
+    final clean = value.trim();
+    if (clean.isEmpty) return ValidationResult.valid();
+    if (clean.length > FieldValidators.socialUrlMaxLength) {
+      return ValidationResult.invalid(
+        'El WhatsApp no puede exceder ${FieldValidators.socialUrlMaxLength} caracteres.',
+      );
+    }
+    if (clean.startsWith(RegExp(r'https?://'))) {
+      return FieldValidators.validateUrl(clean);
+    }
+    return FieldValidators.validateContactPhone(clean);
+  }
+
   static const _platformLabels = {
     SocialPlatform.linkedin: 'LinkedIn',
     SocialPlatform.instagram: 'Instagram',
@@ -5559,6 +5584,7 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
     SocialPlatform.tiktok: 'TikTok',
     SocialPlatform.twitter: 'X / Twitter',
     SocialPlatform.youtube: 'YouTube',
+    SocialPlatform.whatsapp: 'WhatsApp',
     SocialPlatform.calendly: 'Calendly',
     SocialPlatform.github: 'GitHub',
     SocialPlatform.custom: 'Otro enlace',
@@ -5571,10 +5597,23 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
     SocialPlatform.tiktok: 'https://tiktok.com/@tu_usuario',
     SocialPlatform.twitter: 'https://x.com/tu_usuario',
     SocialPlatform.youtube: 'https://youtube.com/@canal',
+    SocialPlatform.whatsapp: '+52 55 1234 5678',
     SocialPlatform.calendly: 'https://calendly.com/tu-nombre',
     SocialPlatform.github: 'https://github.com/tu-usuario',
     SocialPlatform.custom: 'https://tuenlace.com',
   };
+
+  static const _selectablePlatforms = [
+    SocialPlatform.linkedin,
+    SocialPlatform.instagram,
+    SocialPlatform.facebook,
+    SocialPlatform.tiktok,
+    SocialPlatform.twitter,
+    SocialPlatform.youtube,
+    SocialPlatform.whatsapp,
+    SocialPlatform.calendly,
+    SocialPlatform.custom,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -5588,7 +5627,7 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
       childAspectRatio: widget.isDialog ? 1.08 : 1.65,
-      children: SocialPlatform.values.map((p) {
+      children: _selectablePlatforms.map((p) {
         final active = _platform == p;
         final label = _platformLabels[p]!;
         final platformColor = _socialPlatformColor(p);
@@ -5686,6 +5725,15 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
           error: _urlError,
           maxLength: FieldValidators.socialUrlMaxLength,
         ),
+        if (_platform == SocialPlatform.custom) ...[
+          const SizedBox(height: 16),
+          _EditorDialogLabel('Icono'),
+          const SizedBox(height: 10),
+          _CustomSocialIconPicker(
+            selectedKey: _customIconKey,
+            onChanged: (key) => setState(() => _customIconKey = key),
+          ),
+        ],
         const SizedBox(height: 18),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -5850,7 +5898,10 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
                     label: _isEditing ? 'Guardar cambios' : 'Agregar enlace',
                     height: 54,
                     borderRadius: 999,
-                    icon: const Icon(Icons.add_rounded, size: 18),
+                    icon: Icon(
+                      _isEditing ? Icons.save_outlined : Icons.add_rounded,
+                      size: 18,
+                    ),
                     onPressed: () {
                       if (!_validateFields()) {
                         TapLoopToast.show(
@@ -5881,6 +5932,9 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
                           customLabel: _labelCtrl.text.trim().isEmpty
                               ? null
                               : _labelCtrl.text.trim(),
+                          iconKey: _platform == SocialPlatform.custom
+                              ? _customIconKey
+                              : null,
                           isVisible: _isVisible,
                           sortOrder: initial?.sortOrder ?? 0,
                         ),
@@ -5897,6 +5951,87 @@ class _AddSocialSheetState extends State<_AddSocialSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CustomLinkIconOption {
+  final String key;
+  final String label;
+  final IconData icon;
+
+  const _CustomLinkIconOption(this.key, this.label, this.icon);
+}
+
+const _customLinkIconOptions = [
+  _CustomLinkIconOption('link', 'Enlace', Icons.link_rounded),
+  _CustomLinkIconOption('language', 'Web', Icons.language_rounded),
+  _CustomLinkIconOption('store', 'Tienda', Icons.storefront_outlined),
+  _CustomLinkIconOption('work', 'Trabajo', Icons.work_outline_rounded),
+  _CustomLinkIconOption('event', 'Evento', Icons.event_available_outlined),
+  _CustomLinkIconOption('location', 'Ubicación', Icons.location_on_outlined),
+  _CustomLinkIconOption('phone', 'Teléfono', Icons.phone_outlined),
+  _CustomLinkIconOption('mail', 'Correo', Icons.mail_outline_rounded),
+  _CustomLinkIconOption('chat', 'Chat', Icons.chat_bubble_outline_rounded),
+  _CustomLinkIconOption('document', 'Documento', Icons.description_outlined),
+  _CustomLinkIconOption('image', 'Imagen', Icons.image_outlined),
+  _CustomLinkIconOption('video', 'Video', Icons.play_circle_outline_rounded),
+  _CustomLinkIconOption('music', 'Música', Icons.music_note_rounded),
+  _CustomLinkIconOption('payment', 'Pago', Icons.payments_outlined),
+  _CustomLinkIconOption('shopping', 'Compra', Icons.shopping_bag_outlined),
+  _CustomLinkIconOption('restaurant', 'Restaurante', Icons.restaurant_outlined),
+];
+
+class _CustomSocialIconPicker extends StatelessWidget {
+  final String selectedKey;
+  final ValueChanged<String> onChanged;
+
+  const _CustomSocialIconPicker({
+    required this.selectedKey,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        for (final option in _customLinkIconOptions)
+          Tooltip(
+            message: option.label,
+            child: Material(
+              color: selectedKey == option.key
+                  ? AppColors.primary.withValues(alpha: 0.1)
+                  : context.bgCard,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                onTap: () => onChanged(option.key),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selectedKey == option.key
+                          ? AppColors.primary
+                          : context.borderStrongSoft,
+                      width: selectedKey == option.key ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Icon(
+                    option.icon,
+                    size: 22,
+                    color: selectedKey == option.key
+                        ? AppColors.primary
+                        : context.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -6834,48 +6969,32 @@ class _CalendarioTab extends StatefulWidget {
 
 class _CalendarioTabState extends State<_CalendarioTab> {
   late bool _enabled;
-  late final Map<CalendarProviderType, TextEditingController> _controllers;
-  late String _customLabel;
+  late List<CalendarIntegrationLink> _integrations;
 
   int get _configuredIntegrationCount =>
-      _controllers.values.where((ctrl) => ctrl.text.trim().isNotEmpty).length;
+      _integrations.where((link) => link.url.trim().isNotEmpty).length;
 
   @override
   void initState() {
     super.initState();
     _enabled = widget.calendarEnabled;
-    final parsed = parseCalendarLinks(widget.calendarUrl);
-    _customLabel =
-        parseCustomCalendarLabel(widget.calendarUrl) ?? 'Otra integración';
-    _controllers = {
-      for (final provider in CalendarProviderType.values)
-        provider: TextEditingController(text: parsed[provider] ?? ''),
-    };
-  }
-
-  @override
-  void dispose() {
-    for (final ctrl in _controllers.values) {
-      ctrl.dispose();
-    }
-    super.dispose();
+    _integrations = parseCalendarIntegrationLinks(widget.calendarUrl);
   }
 
   void _emitChanges() {
-    final payload = encodeCalendarLinks({
-      for (final entry in _controllers.entries)
-        if (entry.value.text.trim().isNotEmpty) entry.key: entry.value.text,
-    }, customLabel: _customLabel);
+    final payload = encodeCalendarIntegrationLinks(_integrations);
     widget.onChanged(_enabled, payload);
   }
 
-  Future<void> _showIntegrationDialog({CalendarProviderType? initial}) async {
-    CalendarProviderType provider = initial ?? CalendarProviderType.calendly;
+  Future<void> _showIntegrationDialog({int? initialIndex}) async {
+    final initial = initialIndex == null ? null : _integrations[initialIndex];
+    CalendarProviderType provider =
+        initial?.provider ?? CalendarProviderType.calendly;
     final providerCtrl = TextEditingController(text: provider.label);
-    final urlCtrl = TextEditingController(text: _controllers[provider]!.text);
+    final urlCtrl = TextEditingController(text: initial?.url ?? '');
     final labelCtrl = TextEditingController(
       text: provider == CalendarProviderType.custom
-          ? _customLabel
+          ? initial?.displayLabel ?? 'Otra integración'
           : 'Agenda una reunión',
     );
     bool visible = _enabled;
@@ -6888,9 +7007,8 @@ class _CalendarioTabState extends State<_CalendarioTab> {
             setDialog(() {
               provider = selected;
               providerCtrl.text = selected.label;
-              urlCtrl.text = _controllers[selected]!.text;
               labelCtrl.text = selected == CalendarProviderType.custom
-                  ? _customLabel
+                  ? initial?.displayLabel ?? 'Otra integración'
                   : 'Agenda una reunión';
             });
           }
@@ -6923,7 +7041,7 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  initial == null
+                                  initialIndex == null
                                       ? 'Agregar integración'
                                       : 'Editar integración',
                                   style: GoogleFonts.outfit(
@@ -7071,16 +7189,45 @@ class _CalendarioTabState extends State<_CalendarioTab> {
                               borderRadius: 999,
                               icon: const Icon(Icons.save_outlined, size: 18),
                               onPressed: () {
+                                final url = urlCtrl.text.trim();
+                                if (url.isEmpty) {
+                                  TapLoopToast.show(
+                                    context,
+                                    'La URL de la integración es requerida.',
+                                    TapLoopToastType.error,
+                                  );
+                                  return;
+                                }
+                                final label = labelCtrl.text.trim();
+                                final nextLink = CalendarIntegrationLink(
+                                  provider: provider,
+                                  url: url,
+                                  customLabel:
+                                      provider == CalendarProviderType.custom
+                                      ? (label.isEmpty
+                                            ? 'Otra integración'
+                                            : label)
+                                      : null,
+                                );
                                 setState(() {
                                   _enabled = visible;
-                                  if (provider == CalendarProviderType.custom) {
-                                    final label = labelCtrl.text.trim();
-                                    _customLabel = label.isEmpty
-                                        ? 'Otra integración'
-                                        : label;
+                                  if (initialIndex == null) {
+                                    _integrations = [
+                                      ..._integrations,
+                                      nextLink,
+                                    ];
+                                  } else {
+                                    _integrations = [
+                                      for (
+                                        var i = 0;
+                                        i < _integrations.length;
+                                        i++
+                                      )
+                                        i == initialIndex
+                                            ? nextLink
+                                            : _integrations[i],
+                                    ];
                                   }
-                                  _controllers[provider]!.text = urlCtrl.text
-                                      .trim();
                                 });
                                 _emitChanges();
                                 Navigator.pop(ctx);
@@ -7102,6 +7249,24 @@ class _CalendarioTabState extends State<_CalendarioTab> {
     providerCtrl.dispose();
     urlCtrl.dispose();
     labelCtrl.dispose();
+  }
+
+  void _deleteIntegration(int index) {
+    setState(() {
+      _integrations = [
+        for (var i = 0; i < _integrations.length; i++)
+          if (i != index) _integrations[i],
+      ];
+      if (_integrations.isEmpty) {
+        _enabled = false;
+      }
+    });
+    _emitChanges();
+    TapLoopToast.show(
+      context,
+      'Integración eliminada.',
+      TapLoopToastType.success,
+    );
   }
 
   @override
@@ -7159,29 +7324,27 @@ class _CalendarioTabState extends State<_CalendarioTab> {
             const SizedBox(height: 28),
             Divider(color: context.borderStrongSoft, height: 1),
             const SizedBox(height: 24),
-            if (_controllers.values.every((ctrl) => ctrl.text.trim().isEmpty))
+            if (_integrations.every((link) => link.url.trim().isEmpty))
               _EmptyState(
                 message: 'No hay integraciones configuradas',
                 hint:
                     'Agrega una agenda o herramienta externa para mostrarla en tu perfil.',
               )
             else
-              ...CalendarProviderType.values
-                  .where(
-                    (provider) =>
-                        _controllers[provider]!.text.trim().isNotEmpty,
-                  )
-                  .map((provider) {
-                    final ctrl = _controllers[provider]!;
+              ..._integrations
+                  .asMap()
+                  .entries
+                  .where((entry) => entry.value.url.trim().isNotEmpty)
+                  .map((entry) {
+                    final index = entry.key;
+                    final integration = entry.value;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _IntegrationRow(
-                        provider: provider,
-                        url: ctrl.text.trim(),
-                        title: provider == CalendarProviderType.custom
-                            ? _customLabel
-                            : 'Agendar reunión',
-                        onEdit: () => _showIntegrationDialog(initial: provider),
+                        integration: integration,
+                        onEdit: () =>
+                            _showIntegrationDialog(initialIndex: index),
+                        onDelete: () => _deleteIntegration(index),
                       ),
                     );
                   }),
@@ -7316,16 +7479,14 @@ class _IntegrationTypeCard extends StatelessWidget {
 }
 
 class _IntegrationRow extends StatelessWidget {
-  final CalendarProviderType provider;
-  final String url;
-  final String title;
+  final CalendarIntegrationLink integration;
   final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   const _IntegrationRow({
-    required this.provider,
-    required this.url,
-    required this.title,
+    required this.integration,
     required this.onEdit,
+    required this.onDelete,
   });
 
   @override
@@ -7344,10 +7505,10 @@ class _IntegrationRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(
-                Icons.check_circle_outline_rounded,
+              Icon(
+                _calendarProviderIcon(integration.provider),
                 color: AppColors.primary,
-                size: 26,
+                size: 28,
               ),
               const SizedBox(width: 18),
               Expanded(
@@ -7355,7 +7516,7 @@ class _IntegrationRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      integration.displayLabel,
                       style: GoogleFonts.outfit(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
@@ -7364,7 +7525,7 @@ class _IntegrationRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${provider.label} · $url',
+                      '${integration.provider.label} · ${integration.url}',
                       style: GoogleFonts.dmSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -7376,10 +7537,23 @@ class _IntegrationRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                Icons.arrow_forward_rounded,
-                size: 24,
-                color: context.textPrimary,
+              IconButton(
+                tooltip: 'Editar integración',
+                onPressed: onEdit,
+                icon: Icon(
+                  Icons.edit_outlined,
+                  size: 21,
+                  color: context.textSecondary,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Eliminar integración',
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 21,
+                  color: AppColors.error,
+                ),
               ),
             ],
           ),

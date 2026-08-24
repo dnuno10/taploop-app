@@ -80,6 +80,7 @@ class DigitalCardModel {
   final Color? backgroundColorEnd;
   final CardLayoutStyle layoutStyle;
   final CardProfileDesign profileDesign;
+  final Color iconColor;
   // Design
   final CardBgStyle bgStyle;
   final Color? bgColor;
@@ -122,6 +123,7 @@ class DigitalCardModel {
     this.backgroundColorEnd,
     this.layoutStyle = CardLayoutStyle.centered,
     this.profileDesign = CardProfileDesign.classic,
+    this.iconColor = const Color(0xFFEF6820),
     this.bgStyle = CardBgStyle.plain,
     this.bgColor = Colors.white,
     this.bgColorEnd = Colors.white,
@@ -151,6 +153,7 @@ class DigitalCardModel {
     final bgColorEndVal = (json['bg_color_end'] as num?)?.toInt();
     final bgColorStartVal = (json['background_color_start'] as num?)?.toInt();
     final bgColorEndDbVal = (json['background_color_end'] as num?)?.toInt();
+    final iconColorVal = (json['icon_color'] as num?)?.toInt();
     final layoutStyle = _layoutStyleFromString(
       json['layout_style'] as String? ?? 'centered',
     );
@@ -179,6 +182,7 @@ class DigitalCardModel {
       ),
       layoutStyle: layoutStyle,
       profileDesign: profileDesign,
+      iconColor: Color(iconColorVal ?? primaryColorVal ?? 0xFFEF6820),
       primaryColor: Color(primaryColorVal ?? 0xFFEF6820),
       backgroundColorStart: bgColorStartVal != null
           ? Color(bgColorStartVal)
@@ -220,17 +224,18 @@ class DigitalCardModel {
     'theme_style': themeStyle.name,
     'layout_style': profileDesign.compatibleLayoutStyle.name,
     'profile_design': profileDesign.name,
-    'primary_color': primaryColor.value,
+    'icon_color': iconColor.toARGB32(),
+    'primary_color': primaryColor.toARGB32(),
     if (backgroundColorStart != null)
-      'background_color_start': backgroundColorStart!.value,
+      'background_color_start': backgroundColorStart!.toARGB32(),
     if (backgroundColorEnd != null)
-      'background_color_end': backgroundColorEnd!.value,
+      'background_color_end': backgroundColorEnd!.toARGB32(),
     'bg_style': bgStyle.name,
-    if (bgColor != null) 'bg_color': bgColor!.value,
-    if (bgColorEnd != null) 'bg_color_end': bgColorEnd!.value,
+    if (bgColor != null) 'bg_color': bgColor!.toARGB32(),
+    if (bgColorEnd != null) 'bg_color_end': bgColorEnd!.toARGB32(),
     'enabled_forms': enabledForms,
     'calendar_enabled': calendarEnabled,
-    if (calendarUrl != null) 'calendar_url': calendarUrl,
+    'calendar_url': calendarUrl,
     if (profilePhotoUrl != null) 'profile_photo_url': profilePhotoUrl,
     'show_verified_badge': showVerifiedBadge,
   };
@@ -253,6 +258,7 @@ class DigitalCardModel {
     Color? backgroundColorEnd,
     CardLayoutStyle? layoutStyle,
     CardProfileDesign? profileDesign,
+    Color? iconColor,
     CardBgStyle? bgStyle,
     Color? bgColor,
     Color? bgColorEnd,
@@ -286,6 +292,7 @@ class DigitalCardModel {
       backgroundColorEnd: backgroundColorEnd ?? this.backgroundColorEnd,
       layoutStyle: layoutStyle ?? this.layoutStyle,
       profileDesign: profileDesign ?? this.profileDesign,
+      iconColor: iconColor ?? this.iconColor,
       bgStyle: bgStyle ?? this.bgStyle,
       bgColor: bgColor ?? this.bgColor,
       bgColorEnd: bgColorEnd ?? this.bgColorEnd,

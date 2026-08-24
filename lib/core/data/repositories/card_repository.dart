@@ -232,26 +232,23 @@ class CardRepository {
       userId,
     );
 
-    final created = await _db
-        .from('digital_cards')
-        .insert({
-          'user_id': userId,
-          'org_id': orgId,
-          'name': resolvedName ?? '',
-          'job_title': '',
-          'company': companyName,
-          'bio': '',
-          'public_slug': slug,
-          'is_active': true,
-          'theme_style': 'black',
-          'layout_style': 'centered',
-          'profile_design': 'classic',
-          'primary_color': 0xFFEF6820,
-          'bg_style': 'plain',
-          'show_verified_badge': false,
-        })
-        .select()
-        .single();
+    final created = await _insertDigitalCard({
+      'user_id': userId,
+      'org_id': orgId,
+      'name': resolvedName ?? '',
+      'job_title': '',
+      'company': companyName,
+      'bio': '',
+      'public_slug': slug,
+      'is_active': true,
+      'theme_style': 'black',
+      'layout_style': 'centered',
+      'profile_design': 'classic',
+      'primary_color': 0xFFEF6820,
+      'icon_color': 0xFFEF6820,
+      'bg_style': 'plain',
+      'show_verified_badge': false,
+    });
 
     return _fetchWithItems(created);
   }
@@ -302,26 +299,23 @@ class CardRepository {
       '$userId-${DateTime.now().microsecondsSinceEpoch}',
     );
 
-    final created = await _db
-        .from('digital_cards')
-        .insert({
-          'user_id': userId,
-          'org_id': resolvedOrgId,
-          'name': resolvedName,
-          'job_title': resolvedJobTitle,
-          'company': companyName,
-          'bio': '',
-          'public_slug': slug,
-          'is_active': true,
-          'theme_style': 'black',
-          'layout_style': 'centered',
-          'profile_design': 'classic',
-          'primary_color': 0xFFEF6820,
-          'bg_style': 'plain',
-          'show_verified_badge': false,
-        })
-        .select()
-        .single();
+    final created = await _insertDigitalCard({
+      'user_id': userId,
+      'org_id': resolvedOrgId,
+      'name': resolvedName,
+      'job_title': resolvedJobTitle,
+      'company': companyName,
+      'bio': '',
+      'public_slug': slug,
+      'is_active': true,
+      'theme_style': 'black',
+      'layout_style': 'centered',
+      'profile_design': 'classic',
+      'primary_color': 0xFFEF6820,
+      'icon_color': 0xFFEF6820,
+      'bg_style': 'plain',
+      'show_verified_badge': false,
+    });
 
     return _fetchWithItems(created);
   }
@@ -560,10 +554,29 @@ class CardRepository {
     return '${SupabaseService.url}/storage/v1/object/public/company-logos/$encodedPath';
   }
 
+  static Future<Map<String, dynamic>> _insertDigitalCard(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      return await _db.from('digital_cards').insert(payload).select().single();
+    } catch (error) {
+      if (!_isMissingColumn(error, 'icon_color')) rethrow;
+      final fallback = Map<String, dynamic>.from(payload)..remove('icon_color');
+      return await _db.from('digital_cards').insert(fallback).select().single();
+    }
+  }
+
   // ─── Save card fields ─────────────────────────────────────────────────────
 
   static Future<void> saveCard(DigitalCardModel card) async {
-    await _db.from('digital_cards').update(card.toJson()).eq('id', card.id);
+    final payload = card.toJson();
+    try {
+      await _db.from('digital_cards').update(payload).eq('id', card.id);
+    } catch (error) {
+      if (!_isMissingColumn(error, 'icon_color')) rethrow;
+      final fallback = Map<String, dynamic>.from(payload)..remove('icon_color');
+      await _db.from('digital_cards').update(fallback).eq('id', card.id);
+    }
   }
 
   static Future<void> updateVerifiedBadge({
@@ -693,21 +706,14 @@ class CardRepository {
         ? 0
         : ((last.first['sort_order'] as num?)?.toInt() ?? 0) + 1;
 
-    final data = await _db
-        .from('social_links')
-        .insert(link.copyWith(sortOrder: nextOrder).toJson(cardId: cardId))
-        .select()
-        .single();
+    final payload = link.copyWith(sortOrder: nextOrder).toJson(cardId: cardId);
+    final data = await _insertSocialLink(payload);
     return SocialLinkModel.fromJson(data);
   }
 
   static Future<void> updateSocialLink(SocialLinkModel link) async {
-    final updated = await _db
-        .from('social_links')
-        .update(link.toJson())
-        .eq('id', link.id)
-        .select('id');
-    if ((updated as List).isEmpty) {
+    final updated = await _updateSocialLink(link.id, link.toJson());
+    if (updated.isEmpty) {
       throw Exception('No se encontró el enlace para actualizar.');
     }
   }
@@ -756,6 +762,47 @@ class CardRepository {
     return message.contains('delete_social_link') ||
         message.contains('PGRST202') ||
         message.contains('Could not find the function');
+  }
+
+  static Future<Map<String, dynamic>> _insertSocialLink(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      return await _db.from('social_links').insert(payload).select().single();
+    } catch (error) {
+      if (!_isMissingColumn(error, 'icon_key')) rethrow;
+      final fallback = Map<String, dynamic>.from(payload)..remove('icon_key');
+      return await _db.from('social_links').insert(fallback).select().single();
+    }
+  }
+
+  static Future<List<dynamic>> _updateSocialLink(
+    String linkId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      return await _db
+          .from('social_links')
+          .update(payload)
+          .eq('id', linkId)
+          .select('id');
+    } catch (error) {
+      if (!_isMissingColumn(error, 'icon_key')) rethrow;
+      final fallback = Map<String, dynamic>.from(payload)..remove('icon_key');
+      return await _db
+          .from('social_links')
+          .update(fallback)
+          .eq('id', linkId)
+          .select('id');
+    }
+  }
+
+  static bool _isMissingColumn(Object error, String column) {
+    final message = error.toString();
+    return message.contains(column) &&
+        (message.contains('column') ||
+            message.contains('schema cache') ||
+            message.contains('PGRST204'));
   }
 
   // ─── Smart forms ──────────────────────────────────────────────────────────
