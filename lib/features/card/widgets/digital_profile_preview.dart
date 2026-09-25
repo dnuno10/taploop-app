@@ -125,6 +125,8 @@ class _ScreenContent extends StatelessWidget {
   }
 
   Color get _subColor => _textColor.withValues(alpha: 0.55);
+  Color get _surfaceTextColor => _contrastTextColor(Colors.white);
+  Color get _surfaceSubColor => _surfaceTextColor.withValues(alpha: 0.55);
 
   Color get _accentColor => card.primaryColor;
   Color get _iconColor => card.iconColor;
@@ -736,8 +738,9 @@ class _ScreenContent extends StatelessWidget {
               11 * scale,
             ),
             decoration: BoxDecoration(
+              color: Colors.white,
               borderRadius: BorderRadius.circular(18 * scale),
-              border: Border.all(color: _textColor.withValues(alpha: 0.12)),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
             ),
             child: Column(
               children: [
@@ -749,6 +752,8 @@ class _ScreenContent extends StatelessWidget {
                   ),
                   label: form.name,
                   filled: false,
+                  textColor: _surfaceTextColor,
+                  borderColor: const Color(0xFFE5E7EB),
                   trailing: Icons.keyboard_arrow_up_rounded,
                 ),
                 SizedBox(height: 10 * scale),
@@ -763,16 +768,14 @@ class _ScreenContent extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12 * scale),
-                        border: Border.all(
-                          color: _textColor.withValues(alpha: 0.10),
-                        ),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
                       ),
                       child: Text(
                         label,
                         style: GoogleFonts.dmSans(
                           fontSize: 9 * scale,
                           fontWeight: FontWeight.w600,
-                          color: _subColor,
+                          color: _surfaceSubColor,
                         ),
                       ),
                     ),
@@ -808,7 +811,10 @@ class _ScreenContent extends StatelessWidget {
     required bool filled,
     IconData trailing = Icons.arrow_forward_rounded,
     bool allowWrap = false,
+    Color? textColor,
+    Color? borderColor,
   }) {
+    final effectiveTextColor = textColor ?? _textColor;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: 13 * scale,
@@ -818,7 +824,9 @@ class _ScreenContent extends StatelessWidget {
         color: filled ? _accentColor : Colors.transparent,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: filled ? _accentColor : _textColor.withValues(alpha: 0.12),
+          color: filled
+              ? _accentColor
+              : borderColor ?? _textColor.withValues(alpha: 0.12),
           width: 1.2,
         ),
       ),
@@ -836,14 +844,14 @@ class _ScreenContent extends StatelessWidget {
               style: GoogleFonts.outfit(
                 fontSize: 11 * scale,
                 fontWeight: FontWeight.w800,
-                color: filled ? Colors.white : _textColor,
+                color: filled ? Colors.white : effectiveTextColor,
               ),
             ),
           ),
           Icon(
             trailing,
             size: 16 * scale,
-            color: filled ? Colors.white : _textColor,
+            color: filled ? Colors.white : effectiveTextColor,
           ),
         ],
       ),

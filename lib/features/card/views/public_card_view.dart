@@ -288,7 +288,11 @@ Color _cardTextColor(DigitalCardModel card) {
     CardBgStyle.mesh => Color.lerp(base, end ?? base, 0.5) ?? base,
     CardBgStyle.plain || CardBgStyle.stripes => base,
   };
-  return ThemeData.estimateBrightnessForColor(sampled) == Brightness.dark
+  return _contrastTextColor(sampled);
+}
+
+Color _contrastTextColor(Color color) {
+  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
       ? Colors.white
       : const Color(0xFF0D0D0D);
 }
@@ -1968,8 +1972,9 @@ class _FormCardState extends State<_FormCard> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent;
-    final textColor = widget.textColor;
     const tileBorder = Color(0xFFE5E7EB);
+    const tileBg = Colors.white;
+    final surfaceTextColor = _contrastTextColor(tileBg);
 
     return Material(
       color: Colors.transparent,
@@ -1982,7 +1987,7 @@ class _FormCardState extends State<_FormCard> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: tileBg,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: tileBorder, width: 1.2),
               ),
@@ -1996,7 +2001,7 @@ class _FormCardState extends State<_FormCard> {
                       style: GoogleFonts.outfit(
                         fontSize: 17,
                         fontWeight: FontWeight.w600,
-                        color: textColor,
+                        color: surfaceTextColor,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2007,7 +2012,7 @@ class _FormCardState extends State<_FormCard> {
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
                     size: 24,
-                    color: const Color(0xFF111827),
+                    color: surfaceTextColor,
                   ),
                 ],
               ),
@@ -2021,7 +2026,7 @@ class _FormCardState extends State<_FormCard> {
                     margin: const EdgeInsets.only(top: 10),
                     padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: tileBg,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: tileBorder, width: 1.2),
                     ),
@@ -2029,7 +2034,7 @@ class _FormCardState extends State<_FormCard> {
                       fields: widget.form.fields,
                       ctrl: _ctrl,
                       accent: accent,
-                      textColor: textColor,
+                      textColor: surfaceTextColor,
                       submitting: _submitting,
                       onSubmit: _submit,
                     ),
