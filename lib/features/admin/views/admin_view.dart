@@ -1172,47 +1172,53 @@ class _CompanyHeaderState extends State<_CompanyHeader> {
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: ctx.bgCard,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Nombre de la organización',
-                style: GoogleFonts.outfit(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: ctx.textPrimary,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Nombre de la organización',
+                  style: GoogleFonts.outfit(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: ctx.textPrimary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TapLoopTextField(
-                label: 'Nombre',
-                controller: controller,
-                hint: 'Nombre de la organización',
-                autofocus: true,
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 8),
-                  TapLoopButton(
-                    label: 'Guardar',
-                    onPressed: () {
-                      final trimmed = controller.text.trim();
-                      if (trimmed.isEmpty) return;
-                      Navigator.pop(ctx, trimmed);
-                    },
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 16),
+                TapLoopTextField(
+                  label: 'Nombre',
+                  controller: controller,
+                  hint: 'Nombre de la organización',
+                  autofocus: true,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancelar'),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 120,
+                      child: TapLoopButton(
+                        label: 'Guardar',
+                        onPressed: () {
+                          final trimmed = controller.text.trim();
+                          if (trimmed.isEmpty) return;
+                          Navigator.pop(ctx, trimmed);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1820,9 +1826,12 @@ class _TemplateMemberSurface extends StatelessWidget {
             spacing: 12,
             runSpacing: 12,
             children: [
-              TapLoopButton(
-                label: 'Editar plantilla',
-                onPressed: templateMember == null ? null : onEditTemplate,
+              SizedBox(
+                width: 180,
+                child: TapLoopButton(
+                  label: 'Editar plantilla',
+                  onPressed: templateMember == null ? null : onEditTemplate,
+                ),
               ),
               OutlinedButton(
                 onPressed: onChangeTemplate,

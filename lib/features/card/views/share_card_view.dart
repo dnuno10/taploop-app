@@ -179,39 +179,42 @@ class _ShareCardViewState extends State<ShareCardView> {
                           child: const Text('Cancelar'),
                         ),
                         const SizedBox(width: 8),
-                        TapLoopButton(
-                          label: 'Guardar',
-                          onPressed: () async {
-                            final candidate = controller.text
-                                .trim()
-                                .toLowerCase();
-                            if (!CardRepository.slugPattern.hasMatch(
-                              candidate,
-                            )) {
-                              setDialogState(() {
-                                errorText =
-                                    'Usa solo letras minúsculas, números y guiones (ej. juan-perez).';
-                              });
-                              return;
-                            }
-                            if (candidate == card.publicSlug) {
-                              Navigator.pop(ctx);
-                              return;
-                            }
-                            final available =
-                                await CardRepository.isSlugAvailable(
-                                  candidate,
-                                  excludingCardId: card.id,
-                                );
-                            if (!ctx.mounted) return;
-                            if (!available) {
-                              setDialogState(() {
-                                errorText = 'Ese enlace ya está en uso.';
-                              });
-                              return;
-                            }
-                            Navigator.pop(ctx, candidate);
-                          },
+                        SizedBox(
+                          width: 120,
+                          child: TapLoopButton(
+                            label: 'Guardar',
+                            onPressed: () async {
+                              final candidate = controller.text
+                                  .trim()
+                                  .toLowerCase();
+                              if (!CardRepository.slugPattern.hasMatch(
+                                candidate,
+                              )) {
+                                setDialogState(() {
+                                  errorText =
+                                      'Usa solo letras minúsculas, números y guiones (ej. juan-perez).';
+                                });
+                                return;
+                              }
+                              if (candidate == card.publicSlug) {
+                                Navigator.pop(ctx);
+                                return;
+                              }
+                              final available =
+                                  await CardRepository.isSlugAvailable(
+                                    candidate,
+                                    excludingCardId: card.id,
+                                  );
+                              if (!ctx.mounted) return;
+                              if (!available) {
+                                setDialogState(() {
+                                  errorText = 'Ese enlace ya está en uso.';
+                                });
+                                return;
+                              }
+                              Navigator.pop(ctx, candidate);
+                            },
+                          ),
                         ),
                       ],
                     ),
