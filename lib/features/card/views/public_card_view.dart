@@ -23,6 +23,7 @@ import '../models/contact_item_model.dart';
 import '../models/social_link_model.dart';
 import '../models/smart_form_model.dart';
 import '../utils/calendar_links.dart';
+import '../utils/public_card_strings.dart';
 import '../utils/vcard_download_stub.dart'
     if (dart.library.html) '../utils/vcard_download_web.dart';
 
@@ -329,10 +330,12 @@ class _PublicCardViewState extends State<PublicCardView> {
       );
     }
     if (!_card!.isActive) {
+      final t = PublicCardStrings.of(_card!.ownerLanguage);
       return _CardDeactivatedPage(
         message: _card!.deactivationReason?.trim().isNotEmpty == true
             ? _card!.deactivationReason!
-            : 'Tarjeta digital desactivada por seguridad',
+            : t.deactivatedDefaultMessage,
+        strings: t,
       );
     }
     return _CardPage(card: _card!, logoPending: _logoPending);
@@ -454,8 +457,9 @@ String _normalizeInstagramUrl(String raw) {
 
 class _CardDeactivatedPage extends StatelessWidget {
   final String message;
+  final PublicCardStrings strings;
 
-  const _CardDeactivatedPage({required this.message});
+  const _CardDeactivatedPage({required this.message, required this.strings});
 
   @override
   Widget build(BuildContext context) {
@@ -493,7 +497,7 @@ class _CardDeactivatedPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Esta tarjeta no se encuentra disponible temporalmente.',
+                    strings.deactivatedBody,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.dmSans(
                       fontSize: 14,
@@ -561,6 +565,7 @@ class _CardPage extends StatelessWidget {
     final textCol = _cardTextColor(card);
     final bgBase = card.bgColor ?? _cardBgBase(card);
     final isModern = card.usesModernProfileDesign;
+    final t = PublicCardStrings.of(card.ownerLanguage);
 
     final scrollView = CustomScrollView(
       slivers: [
@@ -584,8 +589,9 @@ class _CardPage extends StatelessWidget {
         if (isModern && visibleSocials.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: _ModernSectionHeader(
-              title: 'Conecta conmigo',
+              title: t.connectWithMe,
               textColor: textCol,
+              strings: t,
             ),
           ),
           SliverToBoxAdapter(
@@ -599,8 +605,16 @@ class _CardPage extends StatelessWidget {
         if (visibleContacts.isNotEmpty) ...[
           SliverToBoxAdapter(
             child: isModern
-                ? _ModernSectionHeader(title: 'Contacto', textColor: textCol)
-                : _SectionHeader(title: 'Contacto', textColor: textCol),
+                ? _ModernSectionHeader(
+                    title: t.contact,
+                    textColor: textCol,
+                    strings: t,
+                  )
+                : _SectionHeader(
+                    title: t.contact,
+                    textColor: textCol,
+                    strings: t,
+                  ),
           ),
           SliverToBoxAdapter(
             child: _ContactSection(
@@ -608,12 +622,17 @@ class _CardPage extends StatelessWidget {
               textColor: textCol,
               cardId: card.id,
               modern: isModern,
+              strings: t,
             ),
           ),
         ],
         if (!isModern && visibleSocials.isNotEmpty) ...[
           SliverToBoxAdapter(
-            child: _SectionHeader(title: 'Redes sociales', textColor: textCol),
+            child: _SectionHeader(
+              title: t.socialNetworks,
+              textColor: textCol,
+              strings: t,
+            ),
           ),
           SliverToBoxAdapter(
             child: _SocialSection(
@@ -627,7 +646,11 @@ class _CardPage extends StatelessWidget {
         if (card.calendarEnabled &&
             (card.calendarUrl?.trim().isNotEmpty ?? false)) ...[
           SliverToBoxAdapter(
-            child: _SectionHeader(title: 'Agendar reunión', textColor: textCol),
+            child: _SectionHeader(
+              title: t.scheduleMeeting,
+              textColor: textCol,
+              strings: t,
+            ),
           ),
           SliverToBoxAdapter(
             child: _CalendarButton(
@@ -792,7 +815,7 @@ class _SaveContactButton extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: _downloadVCard,
               icon: const Icon(Icons.person_add_alt_1_outlined, size: 20),
-              label: const Text('Guardar contacto'),
+              label: Text(PublicCardStrings.of(card.ownerLanguage).saveContact),
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
                 foregroundColor: Colors.white,
@@ -857,7 +880,7 @@ class _ModernActionButtons extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Enlace copiado',
+          PublicCardStrings.of(card.ownerLanguage).linkCopied,
           style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
         ),
       ),
@@ -867,6 +890,7 @@ class _ModernActionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasEmail = _emailContact != null;
+    final t = PublicCardStrings.of(card.ownerLanguage);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Center(
@@ -878,7 +902,7 @@ class _ModernActionButtons extends StatelessWidget {
                 Expanded(
                   child: _ModernSecondaryButton(
                     icon: Icons.email_rounded,
-                    label: 'Enviar correo',
+                    label: t.sendEmail,
                     iconColor: iconColor,
                     onTap: _sendEmail,
                   ),
@@ -888,7 +912,7 @@ class _ModernActionButtons extends StatelessWidget {
               Expanded(
                 child: _ModernSecondaryButton(
                   icon: Icons.share_rounded,
-                  label: 'Compartir',
+                  label: t.share,
                   iconColor: iconColor,
                   onTap: () => _share(context),
                 ),
@@ -1198,7 +1222,12 @@ class _AvatarIcon extends StatelessWidget {
 class _SectionHeader extends StatelessWidget {
   final String title;
   final Color textColor;
-  const _SectionHeader({required this.title, required this.textColor});
+  final PublicCardStrings strings;
+  const _SectionHeader({
+    required this.title,
+    required this.textColor,
+    required this.strings,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1211,7 +1240,7 @@ class _SectionHeader extends StatelessWidget {
             width: double.infinity,
             child: HelpTitle(
               title: title.toUpperCase(),
-              helpText: 'Muestra la sección pública de $title en esta tarjeta.',
+              helpText: strings.sectionHelpText(title),
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -1233,10 +1262,12 @@ class _ContactSection extends StatelessWidget {
   final Color textColor;
   final String cardId;
   final bool modern;
+  final PublicCardStrings strings;
   const _ContactSection({
     required this.items,
     required this.textColor,
     required this.cardId,
+    required this.strings,
     this.modern = false,
   });
 
@@ -1294,12 +1325,12 @@ class _ContactSection extends StatelessWidget {
 
   String _modernLabel(ContactItemModel item) {
     return switch (item.type) {
-      ContactType.phone => 'Llamar',
-      ContactType.whatsapp => 'Enviar WhatsApp',
-      ContactType.email => 'Enviar correo',
-      ContactType.address => 'Cómo llegar',
+      ContactType.phone => strings.call,
+      ContactType.whatsapp => strings.sendWhatsapp,
+      ContactType.email => strings.sendEmail,
+      ContactType.address => strings.getDirections,
       ContactType.website =>
-        item.displayLabel.isNotEmpty ? item.displayLabel : 'Visitar sitio web',
+        item.displayLabel.isNotEmpty ? item.displayLabel : strings.visitWebsite,
     };
   }
 
@@ -1415,8 +1446,13 @@ class _ContactSection extends StatelessWidget {
 class _ModernSectionHeader extends StatelessWidget {
   final String title;
   final Color textColor;
+  final PublicCardStrings strings;
 
-  const _ModernSectionHeader({required this.title, required this.textColor});
+  const _ModernSectionHeader({
+    required this.title,
+    required this.textColor,
+    required this.strings,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1429,7 +1465,7 @@ class _ModernSectionHeader extends StatelessWidget {
             width: double.infinity,
             child: HelpTitle(
               title: title,
-              helpText: 'Muestra la sección pública de $title en esta tarjeta.',
+              helpText: strings.sectionHelpText(title),
               style: GoogleFonts.outfit(
                 fontSize: 19,
                 height: 1.1,
@@ -1662,6 +1698,7 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textCol = _cardTextColor(card);
+    final t = PublicCardStrings.of(card.ownerLanguage);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 32, 20, 48),
       child: Center(
@@ -1678,7 +1715,7 @@ class _Footer extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Creado con ',
+                    t.createdWith,
                     style: GoogleFonts.dmSans(
                       fontSize: 13,
                       color: textCol.withValues(alpha: 0.5),
@@ -1849,6 +1886,7 @@ class _FormsSectionState extends State<_FormsSection> {
 
   @override
   Widget build(BuildContext context) {
+    final t = PublicCardStrings.of(widget.card.ownerLanguage);
     if (_loading) return const SizedBox.shrink();
     if (_loadFailed) {
       return Center(
@@ -1857,7 +1895,7 @@ class _FormsSectionState extends State<_FormsSection> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
             child: Text(
-              'No se pudieron cargar los formularios.',
+              t.formsLoadFailed,
               style: GoogleFonts.dmSans(
                 fontSize: 12,
                 color: widget.textColor.withValues(alpha: 0.65),
@@ -1873,8 +1911,9 @@ class _FormsSectionState extends State<_FormsSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SectionHeader(
-          title: 'Formulario de contacto',
+          title: t.contactForm,
           textColor: widget.textColor,
+          strings: t,
         ),
         Center(
           child: Padding(
@@ -1958,13 +1997,14 @@ class _FormCardState extends State<_FormCard> {
   }
 
   Future<void> _submit() async {
+    final t = PublicCardStrings.of(widget.card.ownerLanguage);
     final fields = widget.form.fields;
     // Validate required
     for (final f in fields) {
       if (f.isRequired && (_ctrl[f.id]?.text.trim().isEmpty ?? true)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Por favor completa: ${f.label}'),
+            content: Text(t.pleaseComplete(f.label)),
             backgroundColor: AppColors.error,
           ),
         );
@@ -2034,7 +2074,7 @@ class _FormCardState extends State<_FormCard> {
         });
         TapLoopToast.show(
           context,
-          'Solicitud enviada satisfactoriamente.',
+          t.requestSentSuccessfully,
           TapLoopToastType.success,
         );
       }
@@ -2044,7 +2084,7 @@ class _FormCardState extends State<_FormCard> {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al enviar. Intenta de nuevo.'),
+            content: Text(t.submitError),
             backgroundColor: AppColors.error,
           ),
         );
@@ -2058,6 +2098,7 @@ class _FormCardState extends State<_FormCard> {
     const tileBorder = Color(0xFFE5E7EB);
     const tileBg = Colors.white;
     final surfaceTextColor = _contrastTextColor(tileBg);
+    final t = PublicCardStrings.of(widget.card.ownerLanguage);
 
     return Material(
       color: Colors.transparent,
@@ -2120,6 +2161,7 @@ class _FormCardState extends State<_FormCard> {
                       textColor: surfaceTextColor,
                       submitting: _submitting,
                       onSubmit: _submit,
+                      strings: t,
                     ),
                   )
                 : const SizedBox.shrink(),
@@ -2138,6 +2180,7 @@ class _FormBody extends StatelessWidget {
   final Color textColor;
   final bool submitting;
   final VoidCallback onSubmit;
+  final PublicCardStrings strings;
   const _FormBody({
     required this.fields,
     required this.ctrl,
@@ -2145,6 +2188,7 @@ class _FormBody extends StatelessWidget {
     required this.textColor,
     required this.submitting,
     required this.onSubmit,
+    required this.strings,
   });
 
   @override
@@ -2170,7 +2214,7 @@ class _FormBody extends StatelessWidget {
                 child: submitting
                     ? const TapLoopProgressIndicator(color: Colors.white)
                     : Text(
-                        'Enviar',
+                        strings.send,
                         style: GoogleFonts.outfit(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,

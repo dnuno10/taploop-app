@@ -11,6 +11,7 @@ class UserModel {
   final DateTime? createdAt;
   final String role; // 'admin' | 'default'
   final bool isActive;
+  final String language; // 'es' | 'en' — only affects the public card's labels
 
   const UserModel({
     required this.id,
@@ -24,6 +25,7 @@ class UserModel {
     this.createdAt,
     this.role = 'default',
     this.isActive = true,
+    this.language = 'es',
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -37,6 +39,7 @@ class UserModel {
       jobTitle: json['job_title'] as String?,
       role: json['role'] as String? ?? 'default',
       isActive: json['is_active'] as bool? ?? true,
+      language: json['language'] as String? ?? 'es',
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
           : null,
@@ -53,6 +56,7 @@ class UserModel {
     if (jobTitle != null) 'job_title': jobTitle,
     'role': role,
     'is_active': isActive,
+    'language': language,
   };
 
   UserModel copyWith({
@@ -67,6 +71,7 @@ class UserModel {
     DateTime? createdAt,
     String? role,
     bool? isActive,
+    String? language,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -80,6 +85,7 @@ class UserModel {
       createdAt: createdAt ?? this.createdAt,
       role: role ?? this.role,
       isActive: isActive ?? this.isActive,
+      language: language ?? this.language,
     );
   }
 

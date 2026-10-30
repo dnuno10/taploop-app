@@ -502,6 +502,27 @@ class CardRepository {
     });
   }
 
+  /// Owner's language preference ('es' | 'en'), used only to pick which
+  /// static labels [buildCardModel] attaches to the resulting
+  /// [DigitalCardModel.ownerLanguage] on the public display path — it is
+  /// always the real card owner's own setting, never the shared-template
+  /// owner's, since the shared-template mechanism only ever overlays
+  /// design/forms/integrations/links, not who the visitor is looking at.
+  static Future<String> _fetchOwnerLanguage(String? userId) async {
+    final id = userId?.trim();
+    if (id == null || id.isEmpty) return 'es';
+    return RequestDeduper.run('ownerLanguage:$id', () async {
+      final rows = await _db
+          .from('users')
+          .select('language')
+          .eq('id', id)
+          .limit(1);
+      final list = (rows as List).cast<Map<String, dynamic>>();
+      if (list.isEmpty) return 'es';
+      return list.first['language'] as String? ?? 'es';
+    });
+  }
+
   /// Resolved version of [fetchSmartForms] for public/display use: if the
   /// card's org has shared forms enabled and this card isn't the template
   /// itself, returns the template's forms instead.
@@ -582,9 +603,18 @@ class CardRepository {
         .eq('is_visible', true)
         .order('sort_order');
 
-    final results = await Future.wait<dynamic>([contactsFuture, socialsFuture]);
+    final ownerLanguageFuture = _fetchOwnerLanguage(
+      cardJson['user_id'] as String?,
+    );
+
+    final results = await Future.wait<dynamic>([
+      contactsFuture,
+      socialsFuture,
+      ownerLanguageFuture,
+    ]);
     final contacts = results[0] as List;
     final socials = results[1] as List;
+    final ownerLanguage = results[2] as String;
 
     return buildCardModel(
       effectiveCardJson,
@@ -595,6 +625,7 @@ class CardRepository {
       socialLinks: socials
           .map((e) => SocialLinkModel.fromJson(e as Map<String, dynamic>))
           .toList(),
+      ownerLanguage: ownerLanguage,
     );
   }
 
@@ -604,8 +635,12 @@ class CardRepository {
     List<ContactItemModel> contactItems = const [],
     List<SocialLinkModel> socialLinks = const [],
     List<SmartFormModel> smartForms = const [],
+    String? ownerLanguage,
   }) async {
     final hydratedJson = Map<String, dynamic>.from(cardJson);
+    if (ownerLanguage != null) {
+      hydratedJson['owner_language'] = ownerLanguage;
+    }
     final storedLogo = resolveCompanyLogoUrl(
       (hydratedJson['company_logo'] ?? hydratedJson['company_logo_url'])
           as String?,
@@ -902,7 +937,11 @@ class CardRepository {
     if (items.isEmpty) return;
     final payload = [
       for (var i = 0; i < items.length; i++)
-        {'id': items[i].id, ...items[i].toJson(cardId: cardId), 'sort_order': i},
+        {
+          'id': items[i].id,
+          ...items[i].toJson(cardId: cardId),
+          'sort_order': i,
+        },
     ];
     await _db.from('contact_items').upsert(payload);
   }
@@ -964,7 +1003,11 @@ class CardRepository {
     if (links.isEmpty) return;
     final payload = [
       for (var i = 0; i < links.length; i++)
-        {'id': links[i].id, ...links[i].toJson(cardId: cardId), 'sort_order': i},
+        {
+          'id': links[i].id,
+          ...links[i].toJson(cardId: cardId),
+          'sort_order': i,
+        },
     ];
     await _db.from('social_links').upsert(payload);
   }

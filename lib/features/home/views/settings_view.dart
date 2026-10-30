@@ -26,6 +26,7 @@ class _SettingsViewState extends State<SettingsView> {
   final _newPasswordCtrl = TextEditingController();
   final _confirmPasswordCtrl = TextEditingController();
   bool _changingPassword = false;
+  bool _savingLanguage = false;
 
   @override
   void dispose() {
@@ -62,6 +63,33 @@ class _SettingsViewState extends State<SettingsView> {
       );
     } finally {
       if (mounted) setState(() => _changingPassword = false);
+    }
+  }
+
+  Future<void> _setLanguage(String language) async {
+    final user = appState.currentUser;
+    if (user == null || user.language == language || _savingLanguage) return;
+    setState(() => _savingLanguage = true);
+    try {
+      final updated = await AuthService.updateProfile(
+        user.copyWith(language: language),
+      );
+      appState.setUser(updated);
+      if (!mounted) return;
+      TapLoopToast.show(
+        context,
+        'Idioma del perfil digital actualizado.',
+        TapLoopToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      TapLoopToast.show(
+        context,
+        'No se pudo actualizar el idioma. Intenta de nuevo.',
+        TapLoopToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _savingLanguage = false);
     }
   }
 
@@ -215,6 +243,15 @@ class _SettingsViewState extends State<SettingsView> {
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _SettingsSection(
+                        title: 'Idioma del perfil digital',
+                        child: _LanguageSelector(
+                          language: user.language,
+                          saving: _savingLanguage,
+                          onChanged: _setLanguage,
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -420,6 +457,112 @@ class _SettingsRow extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LanguageSelector extends StatelessWidget {
+  final String language;
+  final bool saving;
+  final ValueChanged<String> onChanged;
+
+  const _LanguageSelector({
+    required this.language,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Elige en qué idioma se muestran las etiquetas y textos fijos de '
+          'tu perfil digital público (no afecta este panel ni el resto del '
+          'dashboard).',
+          style: GoogleFonts.dmSans(fontSize: 13, color: context.textSecondary),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _LanguageOption(
+              label: 'Español',
+              code: 'es',
+              selected: language == 'es',
+              disabled: saving,
+              onTap: () => onChanged('es'),
+            ),
+            _LanguageOption(
+              label: 'English',
+              code: 'en',
+              selected: language == 'en',
+              disabled: saving,
+              onTap: () => onChanged('en'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LanguageOption extends StatelessWidget {
+  final String label;
+  final String code;
+  final bool selected;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  const _LanguageOption({
+    required this.label,
+    required this.code,
+    required this.selected,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: disabled ? null : onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.1)
+              : context.bgSubtle,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : context.borderColor,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              size: 16,
+              color: selected ? AppColors.primary : context.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: selected ? AppColors.primary : context.textPrimary,
               ),
             ),
           ],

@@ -106,6 +106,10 @@ class DigitalCardModel {
   final String? deactivationReason;
   final String? deactivatedBy;
   final DateTime? updatedAt;
+  // Owner's language preference ('es' | 'en') — resolved only on the public
+  // display path (see CardRepository._fetchWithItems); only affects the
+  // public card's static labels, never the dashboard/editors.
+  final String ownerLanguage;
 
   const DigitalCardModel({
     required this.id,
@@ -140,6 +144,7 @@ class DigitalCardModel {
     this.deactivationReason,
     this.deactivatedBy,
     this.updatedAt,
+    this.ownerLanguage = 'es',
   });
 
   factory DigitalCardModel.fromJson(
@@ -207,6 +212,7 @@ class DigitalCardModel {
       contactItems: contactItems,
       socialLinks: socialLinks,
       smartForms: smartForms,
+      ownerLanguage: json['owner_language'] as String? ?? 'es',
     );
   }
 
@@ -275,6 +281,7 @@ class DigitalCardModel {
     String? deactivationReason,
     String? deactivatedBy,
     DateTime? updatedAt,
+    String? ownerLanguage,
   }) {
     return DigitalCardModel(
       id: id ?? this.id,
@@ -309,6 +316,7 @@ class DigitalCardModel {
       deactivationReason: deactivationReason ?? this.deactivationReason,
       deactivatedBy: deactivatedBy ?? this.deactivatedBy,
       updatedAt: updatedAt ?? this.updatedAt,
+      ownerLanguage: ownerLanguage ?? this.ownerLanguage,
     );
   }
 }
